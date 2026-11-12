@@ -66,7 +66,7 @@ function makeMaterials() {
   M.extR.uniforms.g.value.z = 1.15;            // lado da sombra no dia ensolarado
   M.filmL = M.film.clone(); M.filmL.name = 'room.filmL'; M.filmR = M.film.clone(); M.filmR.name = 'room.filmR';
   { const wb = TX.whiteboardTextures();
-    M.wbSurf = new THREE.MeshPhysicalMaterial({ name: 'room.wbSurf', color: 0xffffff, map: wb.map, roughnessMap: wb.roughnessMap, roughness: 1, clearcoat: 1, clearcoatRoughness: 0.035, specularIntensity: 1, envMapIntensity: 1.2 });
+    M.wbSurf = new THREE.MeshPhysicalMaterial({ name: 'room.wbSurf', color: 0xffffff, map: wb.map, roughnessMap: wb.roughnessMap, roughness: 1, clearcoat: 1, clearcoatRoughness: 0.085, specularIntensity: 1, envMapIntensity: 1.2 });
     M.wbBack = new THREE.MeshStandardMaterial({ name: 'room.wbBack', color: 0x8d8f90, roughness: 0.7 });
     M.wbFrame = new THREE.MeshStandardMaterial({ name: 'room.wbFrame', color: 0xc6c9cc, roughness: 0.34, metalness: 0.6, normalMap: g.normalMap, normalScale: new THREE.Vector2(0.08, 0.08) });
     M.wbLip = new THREE.MeshStandardMaterial({ name: 'room.wbLip', color: 0x8e9295, roughness: 0.4, metalness: 0.5 });

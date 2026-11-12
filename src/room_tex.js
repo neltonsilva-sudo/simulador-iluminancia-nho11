@@ -342,7 +342,7 @@ export function whiteboardTextures() {
     const W = 2048, H = 1024, rnd = rng(3131);
     const a = canvas(W, H), g = a.getContext('2d'), r = canvas(W, H), gr = r.getContext('2d');
     const base = g.createLinearGradient(0, 0, W, H); base.addColorStop(0, '#f6f7f7'); base.addColorStop(1, '#f1f2f2'); g.fillStyle = base; g.fillRect(0, 0, W, H);
-    gr.fillStyle = 'rgb(18,18,18)'; gr.fillRect(0, 0, W, H); // rugosidade ≈0,07
+    gr.fillStyle = 'rgb(34,34,34)'; gr.fillRect(0, 0, W, H); // rugosidade ≈0,13
     const stroke = (ctx, col, lw, blur, pts) => { ctx.save(); ctx.filter = `blur(${blur}px)`; ctx.strokeStyle = col; ctx.lineWidth = lw; ctx.lineCap = 'round'; ctx.lineJoin = 'round'; ctx.beginPath(); pts.forEach(([x, y], i) => (i ? ctx.lineTo(x, y) : ctx.moveTo(x, y))); ctx.stroke(); ctx.restore(); };
     // névoa geral de apagador (faixas largas, curvas, muito suaves)
     for (let k = 0; k < 26; k++) { const x = rnd() * W, y = rnd() * H, len = 200 + rnd() * 600, ang = (rnd() - 0.5) * 0.6, pts = [];
@@ -363,7 +363,7 @@ export function whiteboardTextures() {
     for (let k = 0; k < 40; k++) { const x = rnd() * W, y = rnd() * H, l = 15 + rnd() * 80, an = rnd() * Math.PI; const pts = [[x, y], [x + Math.cos(an) * l, y + Math.sin(an) * l]];
       stroke(g, `rgba(150,150,150,${0.05 + rnd() * 0.08})`, 1.2, 0, pts); stroke(gr, 'rgba(110,110,110,0.8)', 1.5, 0, pts); }
     // pontinhos (ponta de pincel, sujeira)
-    for (let k = 0; k < 140; k++) { g.fillStyle = `rgba(${60 + rnd() * 60},${60 + rnd() * 60},${70 + rnd() * 60},${0.15 + rnd() * 0.45})`; g.beginPath(); g.arc(rnd() * W, rnd() * H, 0.8 + rnd() * 2.2, 0, Math.PI * 2); g.fill(); }
+    for (let k = 0; k < 55; k++) { g.fillStyle = `rgba(${60 + rnd() * 60},${60 + rnd() * 60},${70 + rnd() * 60},${0.10 + rnd() * 0.30})`; g.beginPath(); g.arc(rnd() * W, rnd() * H, 0.8 + rnd() * 2.2, 0, Math.PI * 2); g.fill(); }
     const map = tex(a, { wrap: false }), roughnessMap = tex(r, { wrap: false, srgb: false });
     return { map, roughnessMap };
   });
