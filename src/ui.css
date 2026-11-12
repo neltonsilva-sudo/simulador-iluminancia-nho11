@@ -652,3 +652,23 @@ select.inp { appearance: none; padding-right: 30px; background-image: url("data:
 .nho-panel, .hud, .dock, .lxcard { --ui-fg3: #4a5566; --ui-fg2: #2f3845; }
 @media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) .nho-panel, :root:not([data-theme="light"]) .hud, :root:not([data-theme="light"]) .dock, :root:not([data-theme="light"]) .lxcard { --ui-fg3: #c0c8d4; --ui-fg2: #dde3ec; } }
 :root[data-theme="dark"] .nho-panel, :root[data-theme="dark"] .hud, :root[data-theme="dark"] .dock, :root[data-theme="dark"] .lxcard { --ui-fg3: #c0c8d4; --ui-fg2: #dde3ec; }
+/* legibilidade dos cartões (pedido do usuário): vidro um pouco mais denso atrás do texto e texto mais forte */
+.nho-panel .cfg, .nho-panel .stp, .nho-panel .fbox, .nho-panel .hero, .nho-panel .gm, .nho-panel .calc, .nho-panel .band,
+.nho-panel .grp, .nho-panel .env-card, .nho-panel .area, .nho-panel .stat, .nho-panel .seg { background: rgba(255, 255, 255, 0.5) !important; }
+.nho-panel .cfg *, .nho-panel .stp *, .nho-panel .fbox *, .nho-panel .hero *, .nho-panel .gm *, .nho-panel .calc *, .nho-panel .band *,
+.nho-panel .grp *, .nho-panel .env-card *, .nho-panel .area *, .nho-panel .stat * { color: #10151d; }
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) .nho-panel { --lg-tint: rgba(14, 17, 23, 0.62); --lg-tint2: rgba(14, 17, 23, 0.5); } }
+:root[data-theme="dark"] .nho-panel { --lg-tint: rgba(14, 17, 23, 0.62); --lg-tint2: rgba(14, 17, 23, 0.5); }
+:root[data-theme="dark"] .nho-panel :is(.cfg, .stp, .fbox, .hero, .gm, .calc, .band, .grp, .env-card, .area, .stat, .seg) { background: rgba(10, 13, 18, 0.62) !important; border-color: rgba(255, 255, 255, 0.16) !important; }
+:root[data-theme="dark"] .nho-panel :is(.cfg, .stp, .fbox, .hero, .gm, .calc, .band, .grp, .env-card, .area, .stat) * { color: #f3f6fa; }
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) .nho-panel :is(.cfg, .stp, .fbox, .hero, .gm, .calc, .band, .grp, .env-card, .area, .stat, .seg) { background: rgba(10, 13, 18, 0.62) !important; border-color: rgba(255, 255, 255, 0.16) !important; }
+  :root:not([data-theme="light"]) .nho-panel :is(.cfg, .stp, .fbox, .hero, .gm, .calc, .band, .grp, .env-card, .area, .stat) * { color: #f3f6fa; } }
+.nho-panel .cfg [class*="fig"], .nho-panel .cfg small, .nho-panel h3, .nho-panel h4, .nho-panel [class*="sec-t"], .nho-panel label { font-weight: 650; opacity: 1 !important; }
+.nho-panel .cfg[aria-checked="true"], .nho-panel .cfg.on, .nho-panel .cfg.sel { outline: 2px solid var(--ui-accent); }
+.nho-panel .stp[aria-disabled="true"] *, .nho-panel .stp.disabled * { color: inherit; opacity: 0.6 !important; }
+.nho-panel .total, .nho-panel .total *, .nho-panel select, .nho-panel .inp, .nho-panel .cbx-in { color: var(--ui-fg) !important; }
+.nho-panel .total { background: rgba(255, 255, 255, 0.45) !important; }
+:root[data-theme="dark"] .nho-panel .total { background: rgba(10, 13, 18, 0.62) !important; }
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) .nho-panel .total { background: rgba(10, 13, 18, 0.62) !important; } }
+.nho-panel [class*="sec"], .nho-panel [class*="ttl"], .nho-panel [class*="title"], .nho-panel .lbl { color: var(--ui-fg2) !important; opacity: 1 !important; font-weight: 700; }
