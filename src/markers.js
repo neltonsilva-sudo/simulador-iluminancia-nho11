@@ -12,6 +12,8 @@ import {
 } from './mark_tex.js';
 import { OV, ovPatch, ovSync, OverlayPass, ensureLast } from './mark_overlay.js';
 import { buildLuxmeter } from './mark_luxmeter.js';
+import { makeChairMover } from './mark_chairs.js';
+import { FONT } from './mark_tex.js';
 
 const ORDER = ['P', 'T', 'Q', 'R'];
 const clamp01 = (x) => Math.min(1, Math.max(0, x));
@@ -197,6 +199,93 @@ export function buildMarkers(stage) {
     return { group: g, labelRoot, layout, mats: [mat, matL], off, get label() { return lbl; } };
   }
 
+  // ---------- luxímetro: gravação, rótulo flutuante e botão "Registrar leitura" ----------
+  const chairs = makeChairMover(stage);
+  lux.onRecord = (id) => { try { const v = window.__sim?.recordReading?.(id); if (isFinite(v)) lux.showRecorded(v); } catch (err) { console.error(err); } };
+  let recHooked = false;
+  function hookSim() {
+    if (recHooked || !window.__sim?.on) return; recHooked = true;
+    window.__sim.on('record', (r) => { if (r && r.id === lux.id && isFinite(r.v)) lux.showRecorded(r.v); });
+  }
+  const LC = document.createElement('canvas'); LC.width = Math.ceil(860 * LS); LC.height = Math.ceil(196 * LS);
+  const lcTex = canvasTex(LC);
+  const luxLabel = new THREE.Sprite(new THREE.SpriteMaterial({ map: lcTex, transparent: true, depthTest: false, depthWrite: false, toneMapped: false }));
+  luxLabel.center.set(-0.08, 0.5); luxLabel.renderOrder = 40; luxLabel.visible = false; (useOverlay ? ovScene : group).add(luxLabel); flag(luxLabel);
+  let lcKey = '', lcAspect = 860 / 196;
+  function drawLuxLabel(id, hex, valStr, sub, subCol) {
+    const g = LC.getContext('2d'); g.setTransform(1, 0, 0, 1, 0, 0); g.clearRect(0, 0, LC.width, LC.height); g.setTransform(LS, 0, 0, LS, 0, 0);
+    g.font = `800 64px ${FONT}`; const idW = g.measureText(id).width + 40;
+    g.font = `800 76px ${FONT}`; const vW = g.measureText(valStr).width; g.font = `600 44px ${FONT}`; const uW = g.measureText('lux').width;
+    g.font = `600 36px ${FONT}`; const sW = g.measureText(sub).width + 48;
+    const W = Math.min(856, Math.max(idW + 24 + vW + 14 + uW + 40, sW, 300)); lcAspect = W / 196;
+    const R = (x, y, w, h, r) => { g.beginPath(); g.moveTo(x + r, y); g.arcTo(x + w, y, x + w, y + h, r); g.arcTo(x + w, y + h, x, y + h, r); g.arcTo(x, y + h, x, y, r); g.arcTo(x, y, x + w, y, r); g.closePath(); };
+    g.shadowColor = 'rgba(0,0,0,.5)'; g.shadowBlur = 18; g.shadowOffsetY = 5; R(6, 6, W - 12, 180, 26); g.fillStyle = 'rgba(12,16,22,.94)'; g.fill(); g.shadowColor = 'transparent';
+    g.lineWidth = 4; g.strokeStyle = 'rgba(255,255,255,.9)'; g.stroke();
+    R(22, 22, idW, 92, 18); g.fillStyle = hex; g.fill();
+    g.textBaseline = 'middle'; g.textAlign = 'center'; g.font = `800 64px ${FONT}`; g.fillStyle = '#fff'; g.fillText(id, 22 + idW / 2, 70);
+    g.textAlign = 'left'; let x = 22 + idW + 24; g.font = `800 76px ${FONT}`; g.fillStyle = '#fff'; g.fillText(valStr, x, 68); x += vW + 14;
+    g.font = `600 44px ${FONT}`; g.fillStyle = 'rgba(220,228,238,.85)'; g.fillText('lux', x, 78);
+    g.font = `600 36px ${FONT}`; g.fillStyle = subCol; g.fillText(sub, 24, 152);
+    lcTex.repeat.set(W / 860, 1); lcTex.offset.set(0, 0); lcTex.needsUpdate = true;
+  }
+  // botão DOM ancorado ao aparelho (para quem não acertar a tecla REC do 3D)
+  let recBtn = null;
+  function ensureBtn() {
+    if (recBtn) return recBtn; const host = document.getElementById('ui'); if (!host) return null;
+    if (!document.getElementById('mark-style')) { const st = document.createElement('style'); st.id = 'mark-style'; st.textContent = `
+      .mark-rec{position:absolute;left:0;top:0;transform:translate(-9999px,0);display:flex;align-items:center;gap:8px;padding:8px 14px 8px 10px;border-radius:12px;
+        border:1px solid rgba(255,255,255,.22);background:linear-gradient(180deg,#1f8f55,#17784a);color:#fff;font:600 13px/1 ${FONT};letter-spacing:.01em;
+        box-shadow:0 6px 18px rgba(0,0,0,.35),inset 0 1px 0 rgba(255,255,255,.18);cursor:pointer;white-space:nowrap;transition:opacity .2s, filter .15s;pointer-events:auto}
+      .mark-rec:hover{filter:brightness(1.08)} .mark-rec:active{filter:brightness(.92)} .mark-rec[disabled]{opacity:.55;cursor:default}
+      .mark-rec i{width:10px;height:10px;border-radius:50%;background:#ff4757;box-shadow:0 0 0 3px rgba(255,255,255,.25)} .mark-rec.done{background:linear-gradient(180deg,#2d6cdf,#2457b8)}`;
+      document.head.appendChild(st); }
+    recBtn = document.createElement('button'); recBtn.type = 'button'; recBtn.className = 'mark-rec'; recBtn.innerHTML = '<i></i><span>Registrar leitura</span>';
+    recBtn.title = 'Grava a leitura do luxímetro no campo do ponto';
+    recBtn.addEventListener('click', (ev) => { ev.stopPropagation(); lux.press('rec'); });
+    host.appendChild(recBtn); return recBtn;
+  }
+  const bw = new THREE.Vector3(), bv = new THREE.Vector3();
+  function luxUI() {
+    hookSim();
+    const on = lux.active && !!lux.id && !!lux.bodyWorld(bw);
+    let show = false;
+    if (on) {
+      const cam = stage.camera; bv.copy(bw).applyMatrix4(cam.matrixWorldInverse); const depth = -bv.z;
+      show = depth > 0.2;
+      if (show) {
+        const o = P.get(lux.id); const hex = o?.hex || GROUP_HEX[lux.id[0].toUpperCase()] || '#888';
+        const dsp = lux.display; const id = (o?.p.label || lux.id.toUpperCase());
+        const val = !dsp.power ? '—' : isFinite(dsp.value) ? fmtLux(dsp.value) : '—';
+        const [sub, col] = !dsp.power ? ['visor desligado (POWER)', '#9aa6b5'] : dsp.mem ? ['✓ leitura registrada', '#5fe39a'] : dsp.hold ? ['HOLD — leitura congelada', '#ffd166']
+          : dsp.moving ? ['deslocando o tripé…', '#9aa6b5'] : !dsp.stable ? ['estabilizando a fotocélula…', '#ffd166'] : ['leitura ao vivo · estável', '#9fc4ff'];
+        const rv = num(values?.[lux.id]); const sub2 = rv == null ? sub : `${sub}  ·  campo: ${fmtLux(rv)} lux`;
+        const key = id + val + sub2; if (key !== lcKey) { lcKey = key; drawLuxLabel(id, hex, val, sub2, col); }
+        luxLabel.position.copy(bw); luxLabel.updateMatrixWorld();
+        const vh = canvas.clientHeight || innerHeight, tanH = Math.tan(THREE.MathUtils.degToRad(cam.fov || 50) / 2);
+        sizeLabel(luxLabel, lcAspect, Math.max(30, Math.min(48, vh * 0.05)), cam, vh, tanH);
+        // fica à direita do aparelho
+        luxLabel.center.set(-Math.min(1.2, (0.06 / luxLabel.userData.k + 8) / luxLabel.userData.wpx), 0.5);
+        luxLabel.material.opacity = 1;
+        window.__luxDisplay = { id: lux.id, ...dsp };
+        // se a UI já oferece um “Registrar leitura”, não duplica
+        const other = [...document.querySelectorAll('#ui button')].some((x) => x !== recBtn && /registrar leitura/i.test(x.textContent || '') && x.offsetParent);
+        const b = other ? null : ensureBtn();
+        if (recBtn) recBtn.style.visibility = other ? 'hidden' : '';
+        if (b) {
+          bv.copy(bw).project(cam); const r = canvas.getBoundingClientRect();
+          const sx = (bv.x * 0.5 + 0.5) * r.width + r.left, sy = (-bv.y * 0.5 + 0.5) * r.height + r.top;
+          const lx = sx - luxLabel.center.x * luxLabel.userData.wpx, ly = sy + luxLabel.userData.hpx * 0.5 + 8;
+          b.style.transform = `translate(${Math.round(lx)}px, ${Math.round(ly)}px)`;
+          b.disabled = !dsp.power || dsp.moving; b.classList.toggle('done', dsp.mem);
+          b.querySelector('span').textContent = dsp.mem ? 'Registrada ✓' : 'Registrar leitura';
+        }
+      }
+    }
+    luxLabel.visible = show;
+    if (recBtn) recBtn.style.display = show ? '' : 'none';
+    if (ovPass && show) ovPass.enabled = true;
+  }
+
   // ---------- API ----------
   function show(pts, rm, opts = {}) {
     const animate = !!opts.animate;
@@ -218,18 +307,25 @@ export function buildMarkers(stage) {
   }
   function hide() {
     if (marks.visible && !hiding) { hiding = true; hideT0 = performance.now() / 1000; }
-    lux.hide(); canvas.style.cursor = ''; hoverId = null;
+    lux.hide(); chairs.restore(); canvas.style.cursor = ''; hoverId = null;
+  }
+  /** Recolhe o luxímetro (Esc / clique no vazio). */
+  function retract() {
+    if (!lux.active) return;
+    lux.hide(); chairs.restore(); highlight(null);
+    try { if (window.__sim?.state) window.__sim.state.activePoint = null; } catch { /* */ }
   }
   function setValues(v, b) { values = v || {}; bands = b || null; for (const o of P.values()) drawLabel(o); }
   function highlight(id) { hlId = id ? String(id).toLowerCase() : null; hlT0 = performance.now() / 1000; }
   function luxmeterTo(id) {
-    if (!id) { lux.hide(); return; }
+    if (!id) { lux.hide(); chairs.restore(); return; }
     id = String(id).toLowerCase();
     let p = points.find((q) => q.id === id);
     if (!p) { try { p = window.__sim?.points?.().find((q) => q.id === id); } catch { /* */ } }
     if (!p) return;
     const rm = window.__sim?.state?.room || room;
-    lux.moveTo(p.x, p.z, { plane: 0.75, ...rm });
+    lux.moveTo(p.x, p.z, { plane: 0.75, ...rm }, id);
+    chairs.clearAround(p.x, p.z);            // a carteira sob o ponto é afastada (o tripé fica livre, nunca enterrado)
     flag(lux.group, true);
   }
 
@@ -249,8 +345,21 @@ export function buildMarkers(stage) {
   canvas.addEventListener('pointerup', (e) => {
     if (!down) return; const d = Math.hypot(e.clientX - down.x, e.clientY - down.y), dt = performance.now() - down.t; down = null;
     if (d > 6 || dt > 700) return;
-    const id = pickAt(e); if (id) { highlight(id); try { pickFn(id); } catch (err) { console.error(err); } }
+    const lh = luxAt(e);
+    if (lh) { if (lh !== 'body') lux.press(lh); return; }               // teclas 3D do aparelho
+    const id = pickAt(e);
+    if (id) { highlight(id); try { pickFn(id); } catch (err) { console.error(err); } }
+    else retract();                                                    // clique no vazio recolhe o luxímetro
   });
+  addEventListener('keydown', (e) => { if (e.key === 'Escape' && lux.active) retract(); });
+  function luxAt(e) {
+    if (!lux.active) return null;
+    const r = canvas.getBoundingClientRect(); ndc.set(((e.clientX - r.left) / r.width) * 2 - 1, -((e.clientY - r.top) / r.height) * 2 + 1);
+    ray.setFromCamera(ndc, stage.camera);
+    const hits = ray.intersectObject(lux.group, true); if (!hits.length) return null;
+    const b = hits.find((h) => h.object.userData.btn && h.distance < hits[0].distance + 0.03);
+    return b ? b.object.userData.btn : 'body';
+  }
   canvas.addEventListener('pointermove', (e) => {
     const now = performance.now(); if (now - lastMove < 60 || e.buttons) return; lastMove = now;
     const id = pickAt(e); if (id !== hoverId) { hoverId = id; canvas.style.cursor = id ? 'pointer' : ''; }
@@ -352,10 +461,10 @@ export function buildMarkers(stage) {
     const now = performance.now() / 1000;
     ovSync(stage);
     if (ovPass) { ovPass.enabled = labels.visible; ensureLast(stage, ovPass); }
-    lux.update(dt, now);
+    lux.update(dt, now); chairs.update(); luxUI(dt, now);
     if (!marks.visible) return;
     let K = 1;
-    if (hiding) { K = 1 - clamp01((now - hideT0) / 0.35); if (K <= 0) { marks.visible = labels.visible = false; hiding = false; if (ovPass) ovPass.enabled = false; return; } }
+    if (hiding) { K = 1 - clamp01((now - hideT0) / 0.35); if (K <= 0) { marks.visible = labels.visible = false; hiding = false; if (ovPass) ovPass.enabled = luxLabel.visible; return; } }
     const cam = stage.camera; cam.getWorldDirection(camDir); cam.updateMatrixWorld();
     labels.updateMatrixWorld(true);
     const vh = canvas.clientHeight || innerHeight, tanH = Math.tan(THREE.MathUtils.degToRad(cam.fov || 50) / 2);
@@ -406,7 +515,7 @@ export function buildMarkers(stage) {
       const ds = Math.max(0.001, sD) * (hl ? 1.1 + 0.08 * hlPulse : hov ? 1.06 : 1);
       o.disc.scale.setScalar(ds); o.ghost.scale.setScalar(ds);
       const luxHere = lux.active && Math.abs(lux.target.x - o.p.x) < 0.01 && Math.abs(lux.target.z - o.p.z) < 0.01;
-      o.luxK = (o.luxK ?? 1) + ((luxHere ? 0.18 : 1) - (o.luxK ?? 1)) * Math.min(1, dt * 4);
+      o.luxK = (o.luxK ?? 1) + ((luxHere ? 0.06 : 1) - (o.luxK ?? 1)) * Math.min(1, dt * 4);
       o.discMat.opacity = 0.95 * aD * dimK * o.luxK * nearP; o.ghostMat.opacity = 0.2 * aD * dimK * (luxHere ? 0 : 1) * nearP;
       // ondas
       const rip = (mesh, t0, dur, r0, r1, peak) => { const u = (tau - t0) / dur; if (u >= 0 && u < 1) { mesh.visible = true; const r = r0 + (r1 - r0) * easeOut(u); mesh.scale.set(r, r, 1); mesh.material.opacity = peak * (1 - u) * K; return true; } return false; };
@@ -431,7 +540,7 @@ export function buildMarkers(stage) {
         const d = sizeLabel(o.pLabel, o.pAspect, pxBase * 1.06 * (hl ? 1.2 : 1 - 0.12 * o.occS), cam, vh, tanH);
         const discPx = DISC_R / Math.max(1e-4, o.pLabel.userData.k);
         o.pLabel.center.set(0.5, -Math.min(2.5, (discPx * (plan ? 1.0 : 0.45) + 4) / o.pLabel.userData.hpx));
-        o.pBase = aPL * sstep(0.5, 1.0, d) * (hlId && !hl ? 0.72 : 1) * K;
+        o.pBase = aPL * sstep(0.5, 1.0, d) * (hlId && !hl ? 0.72 : 1) * K * (luxHere && lux.display.power ? 0 : 1);   // o rótulo do luxímetro substitui
       } else o.pBase = 0;
       o.pickBeam.visible = beamOn;
     }
@@ -453,7 +562,7 @@ export function buildMarkers(stage) {
     }
   }
 
-  return {
+  const api = {
     group, show, hide, setValues, highlight, luxmeterTo,
     onPick(fn) { pickFn = typeof fn === 'function' ? fn : () => {}; },
     // extras (não exigidos pelo contrato)
@@ -461,4 +570,6 @@ export function buildMarkers(stage) {
     get luxmeter() { return lux; },
     get overlayScene() { return ovScene; },
   };
+  window.__markers = api;   // inspeção/testes automatizados
+  return api;
 }

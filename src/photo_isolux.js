@@ -2,8 +2,8 @@
 // tamanho constante na tela) e legenda em canvas (DOM). Cálculo num Web Worker (fallback síncrono), com debounce.
 // Dono: FOTOMETRIA.
 import * as THREE from 'three';
-import { computeGrid, REFLECT, MF, OPENINGS } from './photo_core.js';
-import { colorizeGrid, contours, isoLevels, niceRange, colorAt } from './photo_color.js';
+import { computeGrid, REFLECT, MF, OPENINGS, primeGeometry, hasGeometry } from './photo_core.js';
+import { colorizeGrid, contours, isoLevels, niceRange, anchoredRange, colorAt } from './photo_color.js';
 import { attachOverlay } from './photo_overlay.js';
 
 const NX = 128;            // amostras ao longo de W (a grade fica ≈128 × 199 na sala padrão)
@@ -45,7 +45,7 @@ export function buildIsolux(stage) {
 
   // ---- legenda (canvas DOM)
   const legend = document.createElement('canvas'); legend.className = 'photo-isolux-legend';
-  Object.assign(legend.style, { position: 'fixed', left: '16px', bottom: '16px', width: '360px', height: '96px', zIndex: 5, pointerEvents: 'none',
+  Object.assign(legend.style, { position: 'fixed', left: '16px', bottom: '16px', width: '360px', height: '112px', zIndex: 5, pointerEvents: 'none',
     borderRadius: '12px', boxShadow: '0 6px 24px rgba(0,0,0,.28)', display: 'none', backdropFilter: 'blur(8px)', WebkitBackdropFilter: 'blur(8px)' });
   document.body.appendChild(legend);
 
@@ -53,7 +53,9 @@ export function buildIsolux(stage) {
   let worker = null, busy = false, pending = null, seq = 0, applied = 0, timer = 0, visible = false, dirty = false, args = null;
   try {
     worker = new Worker(new URL('./photo_worker.js', import.meta.url), { type: 'module' });
-    worker.onmessage = (ev) => { busy = false; const m = ev.data; if (m.error) { console.error('[isolux worker]', m.error); worker = null; }
+    worker.onmessage = (ev) => { const m = ev.data;
+      if (m.type === 'geom') { primeGeometry(m.room, m.data); return; } // fatores de forma calculados fora da thread principal
+      busy = false; if (m.error) { console.error('[isolux worker]', m.error); worker = null; }
       else if (m.seq >= applied) { applied = m.seq; apply(m.grid, m.rgba, m.cw, m.ch, m.range); }
       if (pending) { const p = pending; pending = null; post(p); } };
     worker.onerror = (e) => { console.warn('[isolux] worker indisponível, usando cálculo local', e.message); worker = null; busy = false; if (args) run(); };
@@ -63,25 +65,35 @@ export function buildIsolux(stage) {
   let stats = null, range = null, levelsCache = [], curLums = [], curSpec = {};
 
   function post(job) { busy = true; worker.postMessage(job); }
+  const Ereq = () => { const v = +globalThis.__sim?.state?.Emin; return Number.isFinite(v) && v > 0 ? v : 0; };
+  let lastReq = Ereq();
+  // troca de ambiente (Quadro 1) muda a âncora da escala de cores → recolorir
+  try { globalThis.__sim?.on?.('change', () => { const e = Ereq(); if (e !== lastReq) { lastReq = e; if (visible) schedule(); else dirty = true; } }); } catch { /* sem app */ }
+  // pré-aquece os fatores de forma de salas novas no worker (evita 0,2–1 s de trava na thread principal)
+  const geomAsked = new Set();
+  function prewarm(r) {
+    if (!worker || !r || hasGeometry(r)) return; const k = `${(+r.L).toFixed(3)}|${(+r.W).toFixed(3)}|${(+r.H).toFixed(3)}`;
+    if (geomAsked.has(k)) return; geomAsked.add(k); worker.postMessage({ type: 'geom', room: { L: +r.L, W: +r.W, H: +r.H } });
+  }
   function run() {
     if (!args) return; dirty = false;
     const [lums, r, spec] = args; room = { ...r, plane: r.plane ?? 0.75 };
     const nx = NX, nz = Math.max(16, Math.round(NX * room.L / room.W));
     const cw = Math.min(2048, Math.round(room.W * PX_PER_M)), ch = Math.min(2048, Math.round(room.L * PX_PER_M));
     const clean = (o) => JSON.parse(JSON.stringify(o));
-    const job = { seq: ++seq, lums: clean(lums), room: clean(room), spec: clean(spec), reflect: { ...REFLECT }, mf: MF, openings: clean(OPENINGS), nx, nz, cw, ch };
+    const job = { seq: ++seq, lums: clean(lums), room: clean(room), spec: clean(spec), reflect: { ...REFLECT }, mf: MF, openings: clean(OPENINGS), nx, nz, cw, ch, Ereq: Ereq() };
     curLums = job.lums; curSpec = job.spec;
     if (worker) { if (busy) pending = job; else post(job); return; }
     // fallback síncrono (grade reduzida para não travar)
     const g = computeGrid(job.lums, job.room, job.spec, 0.25, { nx: 72, nz: Math.round(72 * room.L / room.W) });
-    const rgba = colorizeGrid(g, Math.round(cw / 2), Math.round(ch / 2));
+    const rgba = colorizeGrid(g, Math.round(cw / 2), Math.round(ch / 2), anchoredRange(g.Emax, job.Ereq));
     applied = job.seq; apply(g, rgba, Math.round(cw / 2), Math.round(ch / 2), rgba.range);
   }
   function schedule() { clearTimeout(timer); timer = setTimeout(run, DEBOUNCE); }
 
   function apply(g, rgba, cw, ch, R) {
     const lit = g.Emax > 0.5;
-    stats = { Emin: g.Emin, Emax: g.Emax, Emed: g.Emed, U0: g.U0, nx: g.nx, nz: g.nz, lit };
+    stats = { Emin: g.Emin, Emax: g.Emax, Emed: g.Emed, U0: g.U0, nx: g.nx, nz: g.nz, lit, Ereq: Ereq() };
     range = R;
     cv.width = cw; cv.height = ch;
     const img = new ImageData(rgba.data || rgba, cw, ch);
@@ -90,7 +102,7 @@ export function buildIsolux(stage) {
     ctx.globalCompositeOperation = 'destination-in'; ctx.fillStyle = `rgba(0,0,0,${lit ? 0.74 : 0.35})`; ctx.fillRect(0, 0, cw, ch);
     ctx.globalCompositeOperation = 'source-over';
     const sx = cw / g.nx, sz = ch / g.nz, toPx = (p) => [(p[0] + 0.5) * sx, (p[1] + 0.5) * sz];
-    const levels = lit ? isoLevels(g.Emin, g.Emax, R) : [];
+    const levels = lit ? isoLevels(g.Emin, g.Emax, niceRange(g.Emin, g.Emax)) : []; // linhas: passo fino dos dados; cores: escala ancorada
     const lines = [];
     // 70 % de Ē (critério do item 5 da NHO-11) — tracejada
     const e70 = 0.7 * g.Emed; const show70 = lit && e70 > g.Emin && e70 < g.Emax;
@@ -158,7 +170,12 @@ export function buildIsolux(stage) {
       if (shown) for (const p of globalThis.__sim?.points?.() || []) { const hw = vals[p.id] != null && vals[p.id] !== '' ? 78 : 26;
         for (const yy of [room.plane, room.H]) { _v.set(p.x, yy, p.z).project(cam); if (_v.z <= 1 && _v.z >= -1) marks.push([(_v.x + 1) / 2 * vw, (1 - _v.y) / 2 * vh, hw]); } } } catch { /* sem app */ }
     const rects = []; let total = 0;
-    const hit = (r) => rects.some((o) => r[0] < o[2] + 8 && r[2] > o[0] - 8 && r[1] < o[3] + 6 && r[3] > o[1] - 6)
+    // obstáculos de tela: legenda e painéis da UI (coordenadas relativas ao canvas)
+    const blocks = []; try { const cr = el.getBoundingClientRect();
+      const add = (e) => { if (!e || getComputedStyle(e).display === 'none') return; const b = e.getBoundingClientRect(); if (b.width && b.height) blocks.push([b.left - cr.left, b.top - cr.top, b.right - cr.left, b.bottom - cr.top]); };
+      if (legend.style.display !== 'none') add(legend);
+      const ui = document.getElementById('ui'); if (ui && getComputedStyle(ui).display !== 'none') for (const c of ui.children) add(c); } catch { /* sem DOM */ }
+    const hit = (r) => blocks.some((o) => r[0] < o[2] + 6 && r[2] > o[0] - 6 && r[1] < o[3] + 6 && r[3] > o[1] - 6) || rects.some((o) => r[0] < o[2] + 8 && r[2] > o[0] - 8 && r[1] < o[3] + 6 && r[3] > o[1] - 6)
       || marks.some((m) => m[0] > r[0] - m[2] && m[0] < r[2] + m[2] && m[1] > r[1] - 30 && m[1] < r[3] + 36);
     for (const { Ln, chains } of chainsW) {
       const text = Ln.kind === '70' ? `70% Ē · ${fmtInt(Ln.v)} lx` : `${fmtInt(Ln.v)} lx`;
@@ -166,10 +183,10 @@ export function buildIsolux(stage) {
       let count = 0;
       for (const c of chains) {
         const want = c.len > 7 ? 2 : 1;
-        for (let n = 0; n < want && count < 2 && total < 10; n++) {
+        for (let n = 0; n < want && count < (chains[0].len > 7 ? 2 : 1) && total < 10; n++) {
           let best = null, bestS = -Infinity;
           for (let k = 0; k < c.w.length; k += 2) {
-            const [x, z] = c.w[k], wall = Math.min(W2() - Math.abs(x), L2() - Math.abs(z)); if (wall < 0.5) continue;
+            const [x, z] = c.w[k], wall = Math.min(W2() - Math.abs(x), L2() - Math.abs(z)); if (wall < (Ln.kind === '70' ? 0.2 : 0.5)) continue;
             const q = proj(x, z); if (!q) continue;
             const r = [q[0] - wpx / 2, q[1] - hpx / 2, q[0] + wpx / 2, q[1] + hpx / 2];
             if (r[0] < 6 || r[1] < 6 || r[2] > vw - 6 || r[3] > vh - 6 || hit(r)) continue;
@@ -203,42 +220,50 @@ export function buildIsolux(stage) {
 
   // ---- legenda
   function drawLegend() {
-    const dpr = Math.min(2, globalThis.devicePixelRatio || 1), Wc = 360, Hc = 96;
+    const dpr = Math.min(2, globalThis.devicePixelRatio || 1), Wc = 360, Hc = 112;
     legend.width = Wc * dpr; legend.height = Hc * dpr; const x = legend.getContext('2d'); x.setTransform(dpr, 0, 0, dpr, 0, 0);
     x.clearRect(0, 0, Wc, Hc);
-    x.beginPath(); x.roundRect(0, 0, Wc, Hc, 12); x.fillStyle = 'rgba(16,19,25,0.80)'; x.fill();
+    x.beginPath(); x.roundRect(0, 0, Wc, Hc, 12); x.fillStyle = 'rgba(16,19,25,0.82)'; x.fill();
     x.lineWidth = 1; x.strokeStyle = 'rgba(255,255,255,0.10)'; x.stroke();
     const font = (w, s) => `${w} ${s}px Inter, system-ui, -apple-system, "Segoe UI", sans-serif`;
-    x.fillStyle = '#e9edf3'; x.font = font(600, 12); x.textBaseline = 'alphabetic';
-    x.fillText(`Iluminância no plano de trabalho (${fmt2(room.plane ?? 0.75).replace(/0$/, '')} m)`, 14, 21);
-    x.fillStyle = 'rgba(233,237,243,0.55)'; x.font = font(500, 10.5); x.textAlign = 'right'; x.fillText('lux', Wc - 14, 21); x.textAlign = 'left';
-    if (!stats || !stats.lit) { x.fillStyle = 'rgba(233,237,243,0.75)'; x.font = font(500, 12); x.fillText('Luminárias desligadas — 0 lux', 14, 54); return; }
-    const bx = 14, by = 31, bw = Wc - 28, bh = 12, R = range;
+    x.textBaseline = 'alphabetic'; x.fillStyle = '#eef2f7'; x.font = font(650, 12); x.fillText('Simulação (luxímetro virtual)', 14, 20);
+    const tw = x.measureText('Simulação (luxímetro virtual)').width;
+    x.font = font(500, 10.5); x.fillStyle = 'rgba(233,237,243,0.58)';
+    x.fillText(`· plano ${fmt2(room.plane ?? 0.75).replace(/0$/, '')} m`, 14 + tw + 6, 20);
+    x.textAlign = 'right'; x.fillText('lux', Wc - 14, 20); x.textAlign = 'left';
+    if (!stats || !stats.lit) { x.fillStyle = 'rgba(233,237,243,0.75)'; x.font = font(500, 12); x.fillText('Luminárias desligadas — 0 lux', 14, 62); return; }
+    const bx = 14, by = 48, bw = Wc - 28, bh = 12, R = range;
     const gr = x.createLinearGradient(bx, 0, bx + bw, 0);
     for (let k = 0; k <= 16; k++) { const c = colorAt(k / 16); gr.addColorStop(k / 16, `rgb(${c[0] | 0},${c[1] | 0},${c[2] | 0})`); }
     x.beginPath(); x.roundRect(bx, by, bw, bh, 3); x.fillStyle = gr; x.fill();
-    const X = (v) => bx + (v - R.lo) / (R.hi - R.lo) * bw;
-    // faixa realmente presente na sala (Emín–Emáx)
-    x.fillStyle = 'rgba(255,255,255,0.9)';
-    for (const v of [stats.Emin, stats.Emax]) { const px = X(v); x.beginPath(); x.moveTo(px, by - 1); x.lineTo(px - 4, by - 6); x.lineTo(px + 4, by - 6); x.closePath(); x.fill(); }
-    // marcadores Ē e 70 %·Ē
-    const mark = (v, dash) => { const px = X(v); x.save(); x.strokeStyle = '#fff'; x.lineWidth = 1.5; if (dash) x.setLineDash([2.5, 2]); x.beginPath(); x.moveTo(px, by - 2); x.lineTo(px, by + bh + 2); x.stroke(); x.restore(); };
-    mark(stats.Emed, false); if (0.7 * stats.Emed > R.lo) mark(0.7 * stats.Emed, true);
-    x.font = font(500, 10); x.fillStyle = 'rgba(233,237,243,0.78)'; x.textAlign = 'center';
-    for (let v = R.lo; v <= R.hi + 1e-9; v += R.step) x.fillText(fmtInt(v), Math.min(Wc - 16, Math.max(16, X(v))), by + bh + 12);
-    x.textAlign = 'left'; x.font = font(500, 11); x.fillStyle = '#e9edf3';
-    let cx = 14; const item = (k, v) => { x.font = font(500, 11); x.fillStyle = 'rgba(233,237,243,0.6)'; x.fillText(k, cx, Hc - 13); cx += x.measureText(k).width + 4;
-      x.font = font(650, 11.5); x.fillStyle = '#f3f6fa'; x.fillText(v, cx, Hc - 13); cx += x.measureText(v).width + 13; };
+    const X = (v) => bx + Math.min(1, Math.max(0, (v - R.lo) / (R.hi - R.lo))) * bw;
+    // colchete sob a barra: faixa presente na sala (Emín–Emáx)
+    const x0 = X(stats.Emin), x1 = X(stats.Emax);
+    x.strokeStyle = 'rgba(255,255,255,0.85)'; x.lineWidth = 1.4; x.beginPath(); x.moveTo(x0, by + bh + 2); x.lineTo(x0, by + bh + 6); x.lineTo(x1, by + bh + 6); x.lineTo(x1, by + bh + 2); x.stroke();
+    // marcas verticais: Ē (cheia), 70 % Ē (tracejada), Quadro 1 (vermelha) com rótulos acima da barra
+    const tags = [];
+    const mark = (v, color, dash, text) => { const px = X(v); x.save(); x.strokeStyle = color; x.lineWidth = 2; if (dash) x.setLineDash([2.5, 2]);
+      x.beginPath(); x.moveTo(px, by - 3); x.lineTo(px, by + bh + 3); x.stroke(); x.restore(); tags.push({ px, text, color }); };
+    if (0.7 * stats.Emed > R.lo) mark(0.7 * stats.Emed, '#ffffff', true, `70% ${fmtInt(0.7 * stats.Emed)}`);
+    mark(stats.Emed, '#ffffff', false, `Ē ${fmtInt(stats.Emed)}`);
+    if (stats.Ereq > 0) mark(stats.Ereq, '#ff5d6c', false, `Quadro 1 · ${fmtInt(stats.Ereq)}`);
+    x.font = font(600, 10); let lastRight = -1e9;
+    for (const t of tags.sort((a, b) => a.px - b.px)) { const w = x.measureText(t.text).width; let lx = Math.min(Wc - 12 - w, Math.max(12, t.px - w / 2));
+      if (lx < lastRight + 6) lx = lastRight + 6; lx = Math.min(Wc - 12 - w, lx); x.fillStyle = t.color === '#ffffff' ? '#eef2f7' : t.color; x.fillText(t.text, lx, by - 7); lastRight = lx + w; }
+    // escala
+    x.font = font(500, 10); x.fillStyle = 'rgba(233,237,243,0.72)'; x.textAlign = 'center';
+    for (let v = R.lo; v <= R.hi + 1e-9; v += R.step) x.fillText(fmtInt(v), Math.min(Wc - 16, Math.max(16, X(v))), by + bh + 19);
+    x.textAlign = 'left';
+    let cx = 14; const item = (k, v, col) => { x.font = font(500, 11); x.fillStyle = 'rgba(233,237,243,0.6)'; x.fillText(k, cx, Hc - 12); cx += x.measureText(k).width + 4;
+      x.font = font(650, 11.5); x.fillStyle = col || '#f3f6fa'; x.fillText(v, cx, Hc - 12); cx += x.measureText(v).width + 12; };
     item('Emín', fmtInt(stats.Emin)); item('Ē', fmtInt(stats.Emed)); item('Emáx', fmtInt(stats.Emax)); item('U₀', fmt2(stats.U0));
-    // amostra da linha tracejada 70 % Ē
-    x.save(); x.strokeStyle = '#fff'; x.lineWidth = 1.6; x.setLineDash([4, 3]); x.beginPath(); x.moveTo(Wc - 74, Hc - 17); x.lineTo(Wc - 56, Hc - 17); x.stroke(); x.restore();
-    x.font = font(500, 10.5); x.fillStyle = 'rgba(233,237,243,0.7)'; x.textAlign = 'right'; x.fillText('70% Ē', Wc - 14, Hc - 13); x.textAlign = 'left';
+    if (stats.Ereq > 0) item('exigido', fmtInt(stats.Ereq), stats.Emed >= 0.9 * stats.Ereq ? '#5fe08f' : '#ff7b87');
   }
 
   return {
     group,
     legend,
-    update(lums, r, spec) { args = [lums, r, spec]; if (visible) schedule(); else dirty = true; },
+    update(lums, r, spec) { args = [lums, r, spec]; prewarm(r); if (visible) schedule(); else dirty = true; },
     setVisible(b) { visible = !!b; setShown(visible && !!stats);
       if (visible && (dirty || !stats) && args) schedule(); },
     stats: () => stats,

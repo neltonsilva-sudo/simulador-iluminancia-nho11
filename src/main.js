@@ -56,9 +56,12 @@ const app = {
     app.emit('focus', id);
   },
   // Luxímetro virtual: leitura no ponto (fotocélula horizontal a 0,75 m) com ruído de instrumento ±2% e resolução 0,1 lux
+  // Determinística por ponto (ruído fixo derivado do id): o visor e o valor gravado são sempre iguais.
   readLuxmeter: (id) => {
     const p = app.points().find((q) => q.id === String(id).toLowerCase()); if (!p) return NaN;
-    return Math.round(app.simulatedLux(p.x, p.z) * (1 + (Math.random() - 0.5) * 0.04) * 10) / 10;
+    let h = 2166136261; for (const c of p.id + state.N + 'x' + state.M) h = Math.imul(h ^ c.charCodeAt(0), 16777619);
+    const noise = ((h >>> 0) / 4294967296 - 0.5) * 0.04;
+    return Math.round(app.simulatedLux(p.x, p.z) * (1 + noise) * 10) / 10;
   },
   recordReading: (id) => { id = String(id || state.activePoint || '').toLowerCase(); const v = app.readLuxmeter(id); if (isFinite(v)) app.set({ values: { ...state.values, [id]: v } }); app.emit('record', { id, v }); return v; },
   simulatedLux: (x, z) => illuminanceAt(x, state.room.plane, z, app.luminaires(), state.room, lumSpec()),
@@ -67,7 +70,7 @@ window.__sim = app;
 
 function deepAssign(t, s) { for (const k in s) { if (s[k] && typeof s[k] === 'object' && !Array.isArray(s[k]) && t[k] && typeof t[k] === 'object') deepAssign(t[k], s[k]); else t[k] = s[k]; } }
 function pruneValues(v) { const ids = new Set(NORM.configById(state.config).points); const o = {}; for (const k in v) if (ids.has(k)) o[k] = v[k]; return o; }
-function lumSpec() { const t = LUM_TYPES.find((x) => x.id === state.lum.type) || LUM_TYPES[0]; return { ...t, ...state.lum, config: state.config }; }
+function lumSpec() { const t = LUM_TYPES.find((x) => x.id === state.lum.type) || LUM_TYPES[0]; return { ...t, ...state.lum, config: state.config, count: state.N * state.M }; }
 
 function results() {
   const { N, M, room } = state;

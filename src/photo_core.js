@@ -43,6 +43,11 @@ export const OPENINGS = [
   ...[0.157, 0.404, 0.647].map((f) => ({ kind: 'janela', wall: 'right', at: f, w: 1.0, y0: 1.10, y1: 2.10, rho: 0.10 })),
   { kind: 'porta', wall: 'right', at: 0.815, w: 0.90, y0: 0, y1: 2.10, rho: 0.50 },
 ];
+/** Luz natural (spec.daylight 0..1): janelas como fontes difusas. Exitância transmitida pela janela =
+ *  daylight · extLux · vertRatio · tau  (céu encoberto CIE: E_vertical ≈ 0,40·E_horizontal; vidro 0,80 × caixilho/grade 0,78).
+ *  extLux padrão 10 000 lx (dia nublado típico); spec.daylightLux sobrepõe. A NHO-11 manda avaliar na condição mais
+ *  desfavorável — à noite (daylight = 0, padrão). */
+export const DAYLIGHT = { extLux: 10000, vertRatio: 0.40, tau: 0.62 };
 let version = 0;
 /** Substitui as aberturas (lista no formato de OPENINGS; [] = paredes contínuas). */
 export function setOpenings(list = []) { OPENINGS.length = 0; OPENINGS.push(...list); version++; }
@@ -107,14 +112,15 @@ function buildElements(lums, room, spec) {
   const panel = t.dist === 'panel', nL = panel ? 6 : 16, lines = panel ? 6 : (t.lines || 1);
   const per = lums.length * nL * lines, I = phiOut / distIntegral(t) / (nL * lines); // cd por elemento
   const data = new Float64Array(lums.length * nL * lines * 5); let k = 0;
+  const LF = t.lumFactors || {};
   for (const l of lums) {
-    const ax = l.axis === 'z' ? 1 : 0;
+    const ax = l.axis === 'z' ? 1 : 0, f = Math.min(2, Math.max(0, +(LF[l.id] ?? 1) || 0)); // depreciada/queimada: f < 1 / 0
     const len = (panel ? (t.lenM || 0.62) : Math.min(l.len || t.lenM, t.lenM || l.len)) * (t.lumFrac ?? 0.94);
     const wid = panel ? (t.widM || 0.62) * (t.lumFrac ?? 0.95) : (lines > 1 ? (t.lineGap || 0.08) : 0);
     const y = room.H - (t.drop ?? 0.05);
     for (let i = 0; i < nL; i++) for (let j = 0; j < lines; j++) {
       const s = ((i + 0.5) / nL - 0.5) * len, w = lines > 1 ? (panel ? ((j + 0.5) / lines - 0.5) * wid : (j - (lines - 1) / 2) * wid) : 0;
-      data[k++] = ax ? l.x + w : l.x + s; data[k++] = y; data[k++] = ax ? l.z + s : l.z + w; data[k++] = ax; data[k++] = I;
+      data[k++] = ax ? l.x + w : l.x + s; data[k++] = y; data[k++] = ax ? l.z + s : l.z + w; data[k++] = ax; data[k++] = I * f;
     }
   }
   return { n: per, data, D: distFn(t), type: t };
@@ -186,33 +192,44 @@ function ffPointPoly(px, py, pz, nx, ny, nz, V, nv = 4) {
   return Math.abs(s) / (2 * PI);
 }
 const geomCache = new Map();
+const geomKey = (room) => `${(+room.L).toFixed(3)}|${(+room.W).toFixed(3)}|${(+room.H).toFixed(3)}`;
+function storeGeom(key, g) { if (geomCache.size > 6) geomCache.delete(geomCache.keys().next().value); geomCache.set(key, g); return g; }
 function geometry(room) {
-  const key = `${(+room.L).toFixed(3)}|${(+room.W).toFixed(3)}|${(+room.H).toFixed(3)}`;
+  const key = geomKey(room);
   let g = geomCache.get(key); if (g) return g;
   const { P, size } = buildPatches(room), n = P.length, F = new Float32Array(n * n);
-  let closureMin = 9, closureMax = 0;
+  // pares i<j calculados uma vez (emissor diferencial i subamostrado); F_ji = F_ij·A_i/A_j (reciprocidade)
   for (let i = 0; i < n; i++) {
-    const a = P[i], ua = a.uA, va = a.vA; let row = 0;
-    for (let j = 0; j < n; j++) {
-      if (i === j) continue; const b = P[j];
+    const a = P[i], ua = a.uA, va = a.vA;
+    for (let j = i + 1; j < n; j++) {
+      const b = P[j];
       if (a.axis === b.axis && Math.abs(a.c[a.axis] - b.c[b.axis]) < 1e-9) continue; // coplanares
       const r = Math.hypot(a.c[0] - b.c[0], a.c[1] - b.c[1], a.c[2] - b.c[2]);
-      const m = r < 1.2 * (a.dim + b.dim) ? (r < 0.75 * (a.dim + b.dim) ? 5 : 3) : 1; // subamostragem do emissor diferencial
+      const m = r < 1.2 * (a.dim + b.dim) ? (r < 0.75 * (a.dim + b.dim) ? 5 : 3) : 1;
       let f = 0;
       for (let si = 0; si < m; si++) for (let sj = 0; sj < m; sj++) {
         const q = [a.c[0], a.c[1], a.c[2]];
         q[ua] = a.lo[ua] + (a.hi[ua] - a.lo[ua]) * (si + 0.5) / m; q[va] = a.lo[va] + (a.hi[va] - a.lo[va]) * (sj + 0.5) / m;
         f += ffPointPoly(q[0], q[1], q[2], a.n[0], a.n[1], a.n[2], b.v);
       }
-      f /= m * m; F[i * n + j] = f; row += f;
+      f /= m * m; F[i * n + j] = f; F[j * n + i] = f * a.area / b.area;
     }
-    closureMin = Math.min(closureMin, row); closureMax = Math.max(closureMax, row);
-    if (row > 0) for (let j = 0; j < n; j++) F[i * n + j] /= row; // caixa fechada: Σ_j F_ij = 1 (conservação)
   }
-  g = { P, n, F, size, closure: [closureMin, closureMax] };
-  if (geomCache.size > 6) geomCache.delete(geomCache.keys().next().value);
-  geomCache.set(key, g); return g;
+  let closureMin = 9, closureMax = 0;
+  for (let i = 0; i < n; i++) { let row = 0; for (let j = 0; j < n; j++) row += F[i * n + j];
+    closureMin = Math.min(closureMin, row); closureMax = Math.max(closureMax, row);
+    if (row > 0) for (let j = 0; j < n; j++) F[i * n + j] /= row; } // caixa fechada: Σ_j F_ij = 1 (conservação)
+  return storeGeom(key, { P, n, F, size, closure: [closureMin, closureMax] });
 }
+/** Fatores de forma da sala (para transferir do Worker): {key, n, F (cópia), closure}. */
+export function geometryData(room) { const g = geometry(room); return { key: geomKey(room), n: g.n, F: g.F.slice(), closure: g.closure }; }
+/** Instala no cache fatores de forma calculados noutro thread (evita travar a thread principal ao mudar a sala). */
+export function primeGeometry(room, data) {
+  const key = geomKey(room); if (geomCache.has(key) || !data || data.key !== key) return false;
+  const { P, size } = buildPatches(room); if (P.length !== data.n) return false;
+  storeGeom(key, { P, n: P.length, F: data.F, size, closure: data.closure }); return true;
+}
+export const hasGeometry = (room) => geomCache.has(geomKey(room));
 
 // ---------------------------------------------------------------- solução de radiosidade (cacheada)
 const solCache = new Map();
@@ -220,7 +237,8 @@ let last = { lums: null, room: null, spec: null, ver: -1, S: null };
 function solKey(lums, room, spec) {
   const t = resolveType(spec);
   return [room.L, room.W, room.H, t.id, t.dist, t.phiC, t.flux, t.lor, t.dim ?? 1, t.on !== false, t.config, t.mf ?? MF, t.lenM, t.widM, t.drop, t.lines,
-    t.config === 6 && !lums.length ? luminousCount(t) : '', REFLECT.ceiling, REFLECT.walls, REFLECT.floor, version, OPENINGS.length,
+    t.config === 6 && !lums.length ? luminousCount(t) : '', REFLECT.ceiling, REFLECT.walls, REFLECT.floor, version, OPENINGS.length, +t.daylight || 0, t.daylightLux || '',
+    t.lumFactors ? JSON.stringify(t.lumFactors) : '',
     lums.map((l) => `${(+l.x).toFixed(3)},${(+l.z).toFixed(3)},${(+l.len).toFixed(3)},${l.axis}`).join(';')].join('|');
 }
 /** Resolve (ou devolve do cache) a radiosidade para (sala, luminárias, spec). Exposto para testes/diagnóstico. */
@@ -231,11 +249,14 @@ export function solve(lums, room, spec) {
     const t0 = now(), t = resolveType(spec), G = geometry(room), { P, n, F } = G;
     const EL = buildElements(lums, room, t);
     const luminous = !lums.length && t.config === 6 && t.on !== false;
+    const Mday = Math.max(0, +t.daylight || 0) * (+t.daylightLux || DAYLIGHT.extLux) * DAYLIGHT.vertRatio * DAYLIGHT.tau;
+    let daylit = false;
     const rho = new Float64Array(n), Em = new Float64Array(n), E0 = new Float64Array(n);
-    let fluxSurf = 0;
+    let fluxSurf = 0, daylightFlux = 0;
     for (let i = 0; i < n; i++) {
       const p = P[i];
-      rho[i] = p.surf === 'ceiling' ? (luminous ? LUMINOUS_CEILING_RHO : REFLECT.ceiling) : p.surf === 'floor' ? REFLECT.floor : wallRho(p, room);
+      if (p.surf === 'wall') { const w = wallMix(p, room); rho[i] = w.rho; if (Mday > 0 && w.win > 0) { Em[i] += w.win * Mday; daylit = true; } }
+      else rho[i] = p.surf === 'ceiling' ? (luminous ? LUMINOUS_CEILING_RHO : REFLECT.ceiling) : REFLECT.floor;
       if (EL.n) { // irradiância direta média no patch (subamostragem 3×3; 6×6 perto das luminárias)
         const near = p.surf === 'ceiling' || (p.hi[1] > room.H - 0.6 && p.surf === 'wall');
         const m = near ? 6 : 3; let e = 0;
@@ -247,6 +268,7 @@ export function solve(lums, room, spec) {
         E0[i] = e / (m * m); fluxSurf += E0[i] * p.area;
       }
       if (luminous && p.surf === 'ceiling') Em[i] = emittedFlux(t) * luminousCount(t) / (room.L * room.W);
+      if (Em[i]) daylightFlux += p.surf === 'wall' ? Em[i] * p.area : 0;
     }
     // Gauss–Seidel: B_i = Em_i + ρ_i·(E0_i + Σ_j F_ij·B_j)
     const B = new Float64Array(n); for (let i = 0; i < n; i++) B[i] = Em[i] + rho[i] * E0[i];
@@ -260,7 +282,7 @@ export function solve(lums, room, spec) {
       delta /= maxB;
     }
     const emitted = EL.n ? emittedFlux(t) * lums.length : (luminous ? emittedFlux(t) * luminousCount(t) : 0);
-    S = { EL, G, B, rho, E0, Em, iterations: it, emitted, fluxSurf, ms: now() - t0, luminous, plane: room.plane ?? 0.75 };
+    S = { EL, G, B, rho, E0, Em, iterations: it, emitted, fluxSurf, daylightFlux, ms: now() - t0, luminous, daylit, plane: room.plane ?? 0.75 };
     if (solCache.size > 12) solCache.delete(solCache.keys().next().value);
     solCache.set(key, S);
   }
@@ -268,17 +290,17 @@ export function solve(lums, room, spec) {
   return S;
 }
 /** Refletância efetiva de um patch de parede: mistura por área com as aberturas (janelas/porta). */
-function wallRho(p, room) {
+function wallMix(p, room) {
   const wall = p.axis === 0 ? (p.sgn > 0 ? 'left' : 'right') : (p.sgn > 0 ? 'back' : 'front');
-  let cov = 0, acc = 0;
+  let cov = 0, acc = 0, win = 0;
   for (const o of OPENINGS) {
     if (o.wall !== wall) continue;
     const span = wall === 'left' || wall === 'right' ? room.L : room.W, c = -span / 2 + o.at * span;
     const a0 = Math.max(p.lo[p.uA], c - o.w / 2), a1 = Math.min(p.hi[p.uA], c + o.w / 2);
     const b0 = Math.max(p.lo[1], o.y0), b1 = Math.min(p.hi[1], Math.min(o.y1, room.H));
-    if (a1 > a0 && b1 > b0) { const f = (a1 - a0) * (b1 - b0) / p.area; cov += f; acc += f * o.rho; }
+    if (a1 > a0 && b1 > b0) { const f = (a1 - a0) * (b1 - b0) / p.area; cov += f; acc += f * o.rho; if (o.kind === 'janela') win += f; }
   }
-  cov = Math.min(1, cov); return REFLECT.walls * (1 - cov) + acc;
+  cov = Math.min(1, cov); return { rho: REFLECT.walls * (1 - cov) + acc, win: Math.min(1, win) };
 }
 const now = () => (globalThis.performance?.now ? performance.now() : Date.now());
 
@@ -305,16 +327,16 @@ function indirectAt(px, py, pz, S) {
 /** Iluminância horizontal (lux) num ponto (x, y, z): direta + indireta (radiosidade). */
 export function illuminanceAt(x, y, z, lums, room, spec) {
   if (!room || !(room.H > y)) return 0;
-  if (spec?.on === false) return 0;
+  if (spec?.on === false && !(spec.daylight > 0)) return 0;
   const S = solve(lums || [], room, spec || {});
-  if (!S.EL.n && !S.luminous) return 0;
+  if (!S.EL.n && !S.luminous && !S.daylit) return 0;
   return directAt(x, y, z, 0, 1, 0, S.EL) + indirectAt(x, y, z, S);
 }
 /** Componentes separadas {direct, indirect, total} — útil para o painel didático. */
 export function illuminanceParts(x, y, z, lums, room, spec) {
-  if (spec?.on === false) return { direct: 0, indirect: 0, total: 0 };
+  if (spec?.on === false && !(spec.daylight > 0)) return { direct: 0, indirect: 0, total: 0 };
   const S = solve(lums || [], room, spec || {});
-  const d = S.EL.n ? directAt(x, y, z, 0, 1, 0, S.EL) : 0, i = (S.EL.n || S.luminous) ? indirectAt(x, y, z, S) : 0;
+  const d = S.EL.n ? directAt(x, y, z, 0, 1, 0, S.EL) : 0, i = (S.EL.n || S.luminous || S.daylit) ? indirectAt(x, y, z, S) : 0;
   return { direct: d, indirect: i, total: d + i };
 }
 
@@ -328,7 +350,7 @@ export function computeGrid(lums, room, spec, step = 0.25, opts = {}) {
   const xs = Array.from({ length: nx }, (_, i) => -room.W / 2 + (i + 0.5) * room.W / nx);
   const zs = Array.from({ length: nz }, (_, j) => -room.L / 2 + (j + 0.5) * room.L / nz);
   const E = new Float32Array(nx * nz); let mn = Infinity, mx = -Infinity, s = 0;
-  const on = spec?.on !== false, S = on ? solve(lums || [], room, spec || {}) : null, lit = S && (S.EL.n || S.luminous);
+  const on = spec?.on !== false || spec?.daylight > 0, S = on ? solve(lums || [], room, spec || {}) : null, lit = S && (S.EL.n || S.luminous || S.daylit);
   for (let j = 0; j < nz; j++) for (let i = 0; i < nx; i++) {
     const e = lit ? directAt(xs[i], y, zs[j], 0, 1, 0, S.EL) + indirectAt(xs[i], y, zs[j], S) : 0;
     E[j * nx + i] = e; if (e < mn) mn = e; if (e > mx) mx = e; s += e;

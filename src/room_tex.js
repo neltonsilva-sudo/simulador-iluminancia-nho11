@@ -92,6 +92,7 @@ export function wallTextures() {
         let f = 1 + n1 * 0.035 + n2 * 0.012;
         let dirt = 0;
         for (const s of scuffs) { let du = Math.abs(u - s.u); du = Math.min(du, 1 - du) * MW; const dv = vm - s.v; const e = (du * du) / (s.rx * s.rx) + (dv * dv) / (s.ry * s.ry); if (e < 9) dirt += s.a * Math.exp(-e); }
+        if (vm < 0.42) { const t0 = Math.max(0, 1 - vm / 0.4); dirt += t0 * t0 * (0.03 + 0.05 * Math.max(0, n2 * 2 + n1 + 0.4)) + t0 * 0.012 * Math.max(0, Math.sin(u * 61 + n1 * 9)); }
         f *= 1 - dirt;
         R[k] = base[0] * f * (1 - dirt * 0.3); G[k] = base[1] * f * (1 - dirt * 0.4); B[k] = base[2] * f * (1 - dirt * 0.6);
         rough[k] = 0.36 + n1 * 0.10 + (peel[k] - 0.5) * 0.05 - dirt * 0.8;
@@ -222,60 +223,53 @@ export function jointTexture() {
   });
 }
 
-// ---------- CARTAZES de segurança genéricos (A3 retrato) — sem logotipo/instituição ----------
-const PICTOS = ['helmet', 'gloves', 'warning', 'eye'];
+// ---------- CARTAZES de segurança genéricos (A3 retrato, impressão densa) — sem logotipo/instituição ----------
 export function posterTexture(variant = 0) {
   return once('poster' + variant, () => {
     const w = 600, h = 848, c = canvas(w, h), g = c.getContext('2d'), rnd = rng(900 + variant * 17);
-    const blue = '#1f3f9e', blueD = '#152c74';
+    const blue = '#20409c', blueD = '#152c74', yel = '#f1c232';
     g.fillStyle = blue; g.fillRect(0, 0, w, h);
-    // faixa clara de borda interna
-    g.strokeStyle = 'rgba(255,255,255,0.85)'; g.lineWidth = 5; g.strokeRect(22, 22, w - 44, h - 44);
-    // cabeçalho com blocos de "título" ilegível
-    g.fillStyle = '#f2c230'; g.fillRect(44, 44, w - 88, 92);
-    g.fillStyle = blueD; for (let k = 0; k < 2; k++) { let x = 64; const y = 64 + k * 36; while (x < w - 120) { const ww = 30 + rnd() * 80; g.fillRect(x, y, ww, 18); x += ww + 12; } }
-    // painel ilustrativo
-    const px = 44, py = 156, pw = w - 88, ph = 380;
-    const grd = g.createLinearGradient(0, py, 0, py + ph); grd.addColorStop(0, '#fff3c9'); grd.addColorStop(1, '#f4d77a');
-    g.fillStyle = grd; g.fillRect(px, py, pw, ph);
-    drawPicto(g, PICTOS[variant % PICTOS.length], px + pw / 2, py + ph / 2, ph * 0.40, rnd);
-    // blocos de texto ilegíveis
-    let y = py + ph + 34;
-    for (let blk = 0; blk < 3; blk++) {
-      g.fillStyle = '#f2c230'; g.fillRect(44, y, 16, 16);
-      for (let ln = 0; ln < 3 && y < h - 120; ln++) { let x = 74; const lim = w - 54 - (ln === 2 ? 120 + rnd() * 120 : 0); g.fillStyle = 'rgba(255,255,255,0.88)';
-        while (x < lim) { const ww = Math.min(lim - x, 14 + rnd() * 60); g.fillRect(x, y + 2, ww, 11); x += ww + 8; } y += 22; }
-      y += 16;
+    // título: faixa amarela com texto grande ilegível
+    g.fillStyle = yel; g.fillRect(26, 26, w - 52, 74);
+    g.fillStyle = blueD; textRow(g, rnd, 44, 40, w - 70, 20, 10); textRow(g, rnd, 44, 68, w - 160, 16, 8);
+    // fotos: 1 grande + 2 pequenas (tons amarelados, figuras desfocadas, ruído de impressão)
+    const layouts = [[[26, 116, w - 52, 300], [26, 430, 270, 170], [304, 430, 270, 170]], [[26, 116, 270, 250], [304, 116, 270, 250], [26, 380, w - 52, 210]],
+      [[26, 116, w - 52, 230], [26, 360, 180, 160], [214, 360, 180, 160], [402, 360, 172, 160]], [[26, 116, 330, 330], [366, 116, 208, 160], [366, 286, 208, 160]]][variant % 4];
+    for (const [x, y, pw, ph] of layouts) photo(g, rnd, x, y, pw, ph);
+    const yT = Math.max(...layouts.map(([, y, , ph]) => y + ph)) + 18;
+    // texto miúdo em 2 colunas com marcadores amarelos
+    for (let col = 0; col < 2; col++) {
+      let y = yT; const x0 = 30 + col * (w / 2 - 10), cw = w / 2 - 44;
+      while (y < h - 92) { g.fillStyle = yel; g.fillRect(x0, y + 1, 7, 7); g.fillStyle = 'rgba(255,255,255,0.82)';
+        const lines = 2 + Math.floor(rnd() * 3); for (let l = 0; l < lines && y < h - 92; l++) { textRow(g, rnd, x0 + 12, y, l === lines - 1 ? cw * (0.4 + rnd() * 0.5) : cw, 6, 3); y += 10; } y += 7; }
     }
-    // rodapé genérico
-    g.fillStyle = '#f2c230'; g.fillRect(44, h - 88, w - 88, 40); g.fillStyle = blueD; let x = 70; while (x < w - 140) { const ww = 20 + rnd() * 50; g.fillRect(x, h - 76, ww, 14); x += ww + 10; }
-    const t = tex(c, { wrap: false }); return t;
+    // rodapé com pictograma pequeno + linha de texto
+    g.fillStyle = yel; g.fillRect(26, h - 74, w - 52, 48);
+    g.fillStyle = blueD; g.beginPath(); g.arc(56, h - 50, 17, 0, Math.PI * 2); g.fill(); g.fillStyle = '#fff'; g.beginPath(); g.arc(56, h - 50, 9, Math.PI, 0); g.fill(); g.fillRect(44, h - 51, 24, 4);
+    g.fillStyle = blueD; textRow(g, rnd, 86, h - 60, w - 130, 9, 5); textRow(g, rnd, 86, h - 44, w - 220, 8, 5);
+    // grão de impressão
+    const im = g.getImageData(0, 0, w, h), d = im.data; for (let k = 0; k < d.length; k += 4) { const n = (rnd() - 0.5) * 14; d[k] += n; d[k + 1] += n; d[k + 2] += n; } g.putImageData(im, 0, 0);
+    return tex(c, { wrap: false });
   });
 }
-function drawPicto(g, kind, cx, cy, s, rnd) {
-  g.save(); g.translate(cx, cy); g.lineJoin = 'round'; g.lineCap = 'round';
-  const navy = '#173a8a';
-  if (kind === 'warning') {
-    g.fillStyle = '#f5c518'; g.strokeStyle = '#111'; g.lineWidth = s * 0.07;
-    g.beginPath(); g.moveTo(0, -s); g.lineTo(s * 1.05, s * 0.8); g.lineTo(-s * 1.05, s * 0.8); g.closePath(); g.fill(); g.stroke();
-    g.fillStyle = '#111'; g.fillRect(-s * 0.07, -s * 0.45, s * 0.14, s * 0.75); g.beginPath(); g.arc(0, s * 0.52, s * 0.09, 0, Math.PI * 2); g.fill();
-  } else {
-    g.fillStyle = navy; g.beginPath(); g.arc(0, 0, s, 0, Math.PI * 2); g.fill();
-    g.strokeStyle = '#fff'; g.fillStyle = '#fff'; g.lineWidth = s * 0.08;
-    if (kind === 'helmet') {
-      g.beginPath(); g.arc(0, s * 0.15, s * 0.55, Math.PI, 0); g.closePath(); g.fill();
-      g.fillRect(-s * 0.72, s * 0.12, s * 1.44, s * 0.14); g.fillStyle = navy; g.fillRect(-s * 0.05, -s * 0.4, s * 0.1, s * 0.5);
-    } else if (kind === 'gloves') {
-      for (const sx of [-1, 1]) { g.save(); g.translate(sx * s * 0.28, 0); g.scale(sx, 1);
-        g.beginPath(); g.roundRect(-s * 0.2, -s * 0.2, s * 0.4, s * 0.6, s * 0.08); g.fill();
-        for (let f = 0; f < 4; f++) { g.beginPath(); g.roundRect(-s * 0.2 + f * s * 0.1, -s * 0.55, s * 0.08, s * 0.4, s * 0.04); g.fill(); }
-        g.beginPath(); g.roundRect(s * 0.16, -s * 0.12, s * 0.2, s * 0.08, s * 0.04); g.fill(); g.restore(); }
-    } else { // óculos de proteção
-      g.beginPath(); g.ellipse(-s * 0.3, 0, s * 0.26, s * 0.2, 0, 0, Math.PI * 2); g.ellipse(s * 0.3, 0, s * 0.26, s * 0.2, 0, 0, Math.PI * 2); g.fill();
-      g.fillRect(-s * 0.08, -s * 0.06, s * 0.16, s * 0.08); g.fillRect(-s * 0.75, -s * 0.06, s * 0.2, s * 0.06); g.fillRect(s * 0.55, -s * 0.06, s * 0.2, s * 0.06);
-    }
-  }
-  g.restore();
+function textRow(g, rnd, x, y, wmax, hh, gap) { let xx = x; while (xx < x + wmax - 6) { const ww = Math.min(x + wmax - xx, hh * (1.2 + rnd() * 4.5)); g.fillRect(xx, y, ww, hh); xx += ww + gap; } }
+function photo(g, rnd, x, y, pw, ph) {
+  g.save(); g.beginPath(); g.rect(x, y, pw, ph); g.clip();
+  const gr = g.createLinearGradient(x, y, x + pw * 0.3, y + ph); const hue = 38 + rnd() * 14;
+  gr.addColorStop(0, `hsl(${hue},${55 + rnd() * 25}%,${70 + rnd() * 12}%)`); gr.addColorStop(1, `hsl(${hue - 8},${45 + rnd() * 25}%,${42 + rnd() * 15}%)`);
+  g.fillStyle = gr; g.fillRect(x, y, pw, ph);
+  g.filter = 'blur(3px)';
+  // fundo: blocos de "equipamento"
+  for (let k = 0; k < 5; k++) { g.fillStyle = `hsla(${30 + rnd() * 30},${20 + rnd() * 40}%,${30 + rnd() * 50}%,0.6)`; g.fillRect(x + rnd() * pw, y + ph * (0.3 + rnd() * 0.5), pw * (0.1 + rnd() * 0.3), ph * (0.1 + rnd() * 0.5)); }
+  // 1–2 trabalhadores (capacete amarelo/branco, roupa azul/laranja)
+  const nf = 1 + Math.floor(rnd() * 2);
+  for (let f = 0; f < nf; f++) { const cx = x + pw * (0.25 + rnd() * 0.5), s = ph * (0.30 + rnd() * 0.12), by = y + ph * 0.95;
+    g.fillStyle = rnd() < 0.5 ? '#2d4f9a' : '#d9732c'; g.beginPath(); g.ellipse(cx, by - s * 0.55, s * 0.42, s * 0.62, 0, 0, Math.PI * 2); g.fill();
+    g.fillStyle = '#c99a78'; g.beginPath(); g.arc(cx, by - s * 1.32, s * 0.2, 0, Math.PI * 2); g.fill();
+    g.fillStyle = rnd() < 0.6 ? '#f2d023' : '#f4f4f0'; g.beginPath(); g.ellipse(cx, by - s * 1.45, s * 0.25, s * 0.14, 0, Math.PI, 0); g.fill(); }
+  g.filter = 'none';
+  const im = g.getImageData(x, y, pw, ph), d = im.data; for (let k = 0; k < d.length; k += 4) { const n = (rnd() - 0.5) * 30; d[k] += n; d[k + 1] += n; d[k + 2] += n * 0.8; } g.putImageData(im, x, y);
+  g.restore(); g.strokeStyle = 'rgba(255,255,255,0.9)'; g.lineWidth = 3; g.strokeRect(x + 1.5, y + 1.5, pw - 3, ph - 3);
 }
 
 // ---------- JANELA: película leitosa creme (folha direita) e exterior noturno ----------
@@ -286,6 +280,15 @@ export function filmTexture() {
     for (let i = 0; i < W; i++) { const n = f[Math.floor(i / 4)] - 0.5, fold = Math.sin(i / W * Math.PI * 2 * 9) * 0.5 + 0.5;
       const l = 0.80 + n * 0.10 - fold * 0.06; g.fillStyle = `rgb(${Math.round(250 * l)},${Math.round(238 * l)},${Math.round(210 * l)})`; g.fillRect(i, 0, 1, H); }
     const grd = g.createLinearGradient(0, 0, 0, H); grd.addColorStop(0, 'rgba(255,255,255,0.06)'); grd.addColorStop(1, 'rgba(0,0,0,0.10)'); g.fillStyle = grd; g.fillRect(0, 0, W, H);
+    return tex(c, { wrap: false });
+  });
+}
+export function exteriorTexture() { // vão claro bege-acinzentado (muro/corredor iluminado lá fora, como na foto)
+  return once('ext', () => {
+    const W = 256, H = 256, c = canvas(W, H), g = c.getContext('2d');
+    const grd = g.createLinearGradient(0, 0, 0, H); grd.addColorStop(0, '#d6cdbb'); grd.addColorStop(0.6, '#cdc4b1'); grd.addColorStop(1, '#b9b09e');
+    g.fillStyle = grd; g.fillRect(0, 0, W, H);
+    g.filter = 'blur(6px)'; g.fillStyle = 'rgba(150,140,122,0.35)'; g.fillRect(W * 0.62, 0, W * 0.08, H); g.fillRect(0, H * 0.7, W, H * 0.05); g.filter = 'none';
     return tex(c, { wrap: false });
   });
 }

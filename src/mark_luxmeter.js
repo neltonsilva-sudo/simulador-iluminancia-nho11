@@ -250,11 +250,14 @@ export function buildLuxmeter(stage) {
     S.lcdT -= dt;
     if (S.lcdT <= 0) {
       S.lcdT = moving ? 0.2 : 0.33;
-      const T = liveLux(); let v = T, mem = false;
+      // parado sobre o ponto: valor final = __sim.readLuxmeter(id) (determinístico; é o que REC grava)
+      let T = liveLux(), mem = false;
+      if (!moving && S.id) { try { const f = window.__sim?.readLuxmeter?.(S.id); if (isFinite(f)) T = f; } catch { /* */ } }
+      let v = T;
       const u = now - S.arriveT;
       if (!moving && isFinite(T)) {
         if (u < 1.6) v = T * (1 - Math.exp(-Math.max(0, u) / 0.32)) + T * 0.035 * Math.exp(-Math.max(0, u) / 0.4) * Math.sin(u * 8);
-        else v = T + (Math.random() - 0.5) * 0.2 * (T < 1000 ? 1 : 10);
+        else v = T;                                          // estável: exatamente o valor que será registrado
       }
       S.stable = !moving && u >= 1.6;
       if (S.hold) v = S.heldV;

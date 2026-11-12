@@ -196,7 +196,8 @@ export function buildLuminaires(stage) {
       const Pd = Fl * (1 - upF);
       if (kind === 'tube' || kind === 'tube2') {
         L.tubeLed = Pd / (Math.PI * info.tubeArea) / (M.tubeLed.emissiveMap.userData.mean || 0.3);  // ÷ média da textura de chips
-        L.paint = 0.85 * (Fl * 0.07) / (Math.PI * Math.min(l0len(list), 1.3) * (kind === 'tube' ? 0.07 : 0.16));
+        L.paint = 0.85 * (Fl * 0.028) / (Math.PI * Math.min(l0len(list), 1.3) * (kind === 'tube' ? 0.07 : 0.16));
+        L.glow = Math.min(EMIT_MAX, Pd / (Math.PI * info.tubeArea)) * 0.012;
         L.plastic = L.paint * 1.2; L.socket = L.paint * 1.4; L.tubeAlu = L.tubeLed * 0.012;
       } else if (kind === 'louver') {
         L.tubeFluo = Fl / (Math.PI * info.tubeArea * 0.75);
@@ -240,6 +241,7 @@ export function buildLuminaires(stage) {
       const peak = m.emissiveMap?.userData?.peak ?? 1;
       m.emissiveIntensity = Math.min((L[k] || 0) * eff, EMIT_MAX / peak);
     }
+    M.glow.uniforms.uL.value = (L.glow || 0) * eff; M.glow.uniforms.uColor.value.copy(col);
     // tubo apagado: policarbonato leitoso cinza (sem emissão), aceso: quase branco
     const lit = Math.min(1, eff * 4);
     M.tubeLed.color.setScalar(0.62 + 0.25 * lit); M.tubeFluo.color.setScalar(0.66 + 0.22 * lit);

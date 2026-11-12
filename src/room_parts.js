@@ -58,11 +58,12 @@ export function buildWindow(col, frame, w, h, { film = false, t = 0.075 } = {}) 
   // fecho no encontro das folhas
   addBox(col, 'dark', 0.016, 0.07, 0.016, -wi / 2 + sw - sp / 2, 0.02, -0.006, frame);
   // grade externa (barras chatas pintadas creme) — vista através do vidro
-  const gz = -t - 0.045, nb = Math.max(4, Math.round(w / 0.105));
-  for (let i = 0; i <= nb; i++) { const x = -w / 2 + 0.03 + (w - 0.06) * (i / nb); addBox(col, 'grille', 0.016, h + 0.06, 0.010, x, 0, gz, frame); }
-  for (const y of [-h / 2 + 0.02, -h / 6, h / 6, h / 2 - 0.02]) addBox(col, 'grille', w + 0.02, 0.028, 0.008, 0, y, gz - 0.01, frame);
+  // grade: barras verticais redondas a ~0,13 m + trilho superior, inferior e 1 travessão central
+  const gz = -t - 0.05, nb = Math.max(3, Math.round(w / 0.13));
+  for (let i = 1; i < nb; i++) { const x = -w / 2 + w * (i / nb); const b = new THREE.CylinderGeometry(0.008, 0.008, h + 0.08, 8); b.translate(x, 0, gz); b.applyMatrix4(frame); (col.grille ||= []).push(b); }
+  for (const y of [-h / 2 + 0.015, 0.02, h / 2 - 0.015]) addBox(col, 'grille', w + 0.04, 0.03, 0.006, 0, y, gz - 0.012, frame);
   // exterior noturno (só visível pelo vão)
-  addPlane(col, 'night', w + 1.4, h + 1.2, 0, 0, -t - 0.6, frame);
+  addPlane(col, film ? 'exterior' : 'night', w + 0.3, h + 0.3, 0, 0, -t - 0.09, frame);
 }
 
 // ---------- porta (folha branca de aço, batente de alumínio, maçaneta de alavanca) ----------

@@ -18,7 +18,7 @@ const VS = /* glsl */`varying vec2 vUv; void main(){ vUv = uv; gl_Position = pro
 const PreShader = {
   uniforms: {
     tDiffuse: { value: null }, tAO: { value: null }, aoOn: { value: 0 }, aoIntensity: { value: 0.85 },
-    exposure: { value: 1 }, wb: { value: new THREE.Vector3(1, 1, 1) }, clampMax: { value: 48 },
+    exposure: { value: 1 }, wb: { value: new THREE.Vector3(1.03, 1.0, 0.95) }, clampMax: { value: 48 },
   },
   vertexShader: VS,
   fragmentShader: /* glsl */`
@@ -45,7 +45,7 @@ const PreShader = {
 const CameraShader = {
   uniforms: {
     tDiffuse: { value: null }, res: { value: new THREE.Vector2(1280, 720) }, time: { value: 0 },
-    sharpen: { value: 0.32 }, vignette: { value: 0.16 }, grain: { value: 0.022 }, sat: { value: 1.04 },
+    sharpen: { value: 0.32 }, vignette: { value: 0.16 }, grain: { value: 0.022 }, sat: { value: 0.96 },
     contrast: { value: 1.0 }, lift: { value: 0.0 }, tint: { value: new THREE.Vector3(1, 1, 1) },
   },
   vertexShader: VS,
@@ -77,7 +77,8 @@ export const TONEMAPS = { agx: THREE.AgXToneMapping, aces: THREE.ACESFilmicToneM
 export function createPost(renderer, scene, camera, quality) {
   const size = renderer.getDrawingBufferSize(new THREE.Vector2());
   const hi = quality !== 'media';
-  const rt = new THREE.WebGLRenderTarget(size.x, size.y, { type: THREE.HalfFloatType, samples: hi ? 4 : 0 });
+  // sem MSAA: com 8–16 RectAreaLights (LTC) o MSAA 4× quase dobra o custo do quadro no Metal; SMAA + nitidez dão conta
+  const rt = new THREE.WebGLRenderTarget(size.x, size.y, { type: THREE.HalfFloatType, samples: 0 });
   const composer = new EffectComposer(renderer, rt);
 
   const render = new RenderPass(scene, camera);

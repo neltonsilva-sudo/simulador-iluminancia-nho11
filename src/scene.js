@@ -10,8 +10,10 @@ import { createFloorReflection } from './scene_reflect.js';
 import { viewSpec, ease, REF1 } from './scene_views.js';
 
 // Calibração fotométrica: luzes em unidades reais (lm, cd, nit). Uma parede branca (ρ≈0,8) com ~150 lx tem
-// L = ρE/π ≈ 38 cd/m²; K_PHYS leva isso a ~1,1 (branco claro após o tone mapping), como na foto.
-const K_PHYS = 0.028;
+// L = ρE/π ≈ 38 cd/m²; K_PHYS leva isso a ~0,6 (branco claro, não estourado, após o tone mapping Neutral).
+// A exposição é FIXA (física): 500 lx parece mais claro que 200 lx, dimerizar escurece. Uma medição de AE no boot só
+// assume se as unidades estiverem fora de escala (> 4× de diferença) — proteção contra tela branca/preta.
+const K_PHYS = 0.016; // calibrado (tone mapping Neutral): sala padrão, Ē≈220 lx → paredes ≈ 200/255 como na foto
 
 // Guarda global (nível do renderer): nenhum material grava NaN/Inf nem passa do limite do HalfFloat (65504) nos alvos
 // HDR — emissores físicos muito intensos (chips de LED a dezenas de milhares de nit) virariam Inf, e um único Inf
@@ -36,7 +38,7 @@ export function createStage(canvas, opts = {}) {
   let pixelRatio = Number.isFinite(prLock) ? prLock : Math.min(devicePixelRatio || 1, DPR_MAX);
   renderer.setPixelRatio(pixelRatio);
   renderer.outputColorSpace = THREE.SRGBColorSpace;
-  let toneName = TONEMAPS[qs.get('tm')] ? qs.get('tm') : 'agx';
+  let toneName = TONEMAPS[qs.get('tm')] ? qs.get('tm') : 'neutral';
   renderer.toneMapping = TONEMAPS[toneName];
   renderer.toneMappingExposure = 1.0; // a exposição vai no passe PRE (antes do bloom)
   renderer.shadowMap.enabled = true;
@@ -56,7 +58,7 @@ export function createStage(canvas, opts = {}) {
 
   // ---------- pós, ambiente, reflexo ----------
   let post = createPost(renderer, scene, camera, quality);
-  const refl = createFloorReflection(renderer, scene, { enabled: quality === 'alta', scale: 0.5 });
+  const refl = createFloorReflection(renderer, scene, { enabled: quality === 'alta', scale: 0.4 });
   const env = createEnv(renderer, scene, () => room, { before: () => refl.suspend(true), after: () => refl.suspend(false) });
 
   // ---------- exposição (AE de celular travado uma vez + compensação manual) ----------
@@ -65,7 +67,7 @@ export function createStage(canvas, opts = {}) {
   if (Number.isFinite(qsExp)) expComp = qsExp;
   const qsWb = (qs.get('wb') || '').split(',').map(Number);
   if (qsWb.length === 3 && qsWb.every(Number.isFinite)) post.pre.uniforms.wb.value.set(...qsWb);
-  const AE_KEY = 0.205; // valor-chave (média log de luminância do quadro ref1 → cinza claro de foto noturna de celular)
+  const AE_KEY = 0.256; // valor-chave (média log de luminância do quadro ref1 → cinza claro de foto noturna de celular)
   const meterRT = new THREE.WebGLRenderTarget(128, 52, { type: THREE.FloatType });
   const meterCam = new THREE.PerspectiveCamera();
   function meter() {
@@ -86,7 +88,9 @@ export function createStage(canvas, opts = {}) {
     if (c < 50) return null;
     const avg = Math.exp(acc / c);
     if (!(avg > 1e-3)) return null; // luzes apagadas / cena vazia: mantém a calibração física
-    K = Math.min(K_PHYS * 64, Math.max(K_PHYS / 64, AE_KEY / avg));
+    const kae = Math.min(K_PHYS * 64, Math.max(K_PHYS / 64, AE_KEY / avg));
+    K = (kae / K_PHYS > 4 || kae / K_PHYS < 0.25) ? kae : K_PHYS;
+    stage.aeSuggested = kae;
     return avg;
   }
   const exposure = () => K * expComp;
@@ -119,15 +123,28 @@ export function createStage(canvas, opts = {}) {
   function setView(name, o = {}) {
     viewName = name || 'ref1'; viewOpts = o;
     const aspect = (cssW || 16) / (cssH || 9);
-    const s = viewSpec(viewName, o, room, aspect);
+    const s = viewSpec(viewName, { ...o, occluded }, room, aspect);
     controls.enableRotate = s.rotate !== false;
     if (o.animate && !still) {
-      anim = { t: 0, dur: o.duration || 1.15, p0: camera.position.clone(), t0: controls.target.clone(), f0: camera.fov, s0: cur.squash, s };
+      anim = { t: 0, t0ms: performance.now(), dur: o.duration || 1.15, p0: camera.position.clone(), t0: controls.target.clone(), f0: camera.fov, s0: cur.squash, s };
       controls.enabled = false;
     } else {
       anim = null; finishView(s);
     }
     return s;
+  }
+  // fração de raios bloqueados entre a câmera e os alvos (ignora marcadores/luxímetro e o que está a < 0,2 m do alvo)
+  const ray = new THREE.Raycaster();
+  function occluded(from, targets) {
+    let blocked = 0;
+    const objs = scene.children.filter((c) => c.visible && !/MARC|MARK|lux/i.test(c.name || ''));
+    for (const t of targets) {
+      const d = t.clone().sub(from); const len = d.length(); d.normalize();
+      ray.set(from, d); ray.far = Math.max(0.01, len - 0.2);
+      const hit = ray.intersectObjects(objs, true).find((h) => h.object.isMesh && h.object.visible && !(h.object.material?.transparent && !h.object.material?.depthWrite));
+      if (hit) blocked++;
+    }
+    return blocked / targets.length;
   }
   function finishView(s) {
     camera.position.copy(s.pos); controls.target.copy(s.target); camera.fov = s.fov; cur.squash = s.squash;
@@ -136,7 +153,7 @@ export function createStage(canvas, opts = {}) {
   }
   function stepAnim(dt) {
     if (!anim) return;
-    anim.t = Math.min(1, anim.t + dt / anim.dur);
+    anim.t = Math.min(1, (performance.now() - anim.t0ms) / 1000 / anim.dur); // relógio real: termina no tempo mesmo com quadros lentos
     const k = ease(anim.t), s = anim.s;
     camera.position.lerpVectors(anim.p0, s.pos, k);
     controls.target.lerpVectors(anim.t0, s.target, k);
@@ -204,9 +221,19 @@ export function createStage(canvas, opts = {}) {
       if (still || Number.isFinite(prLock) || bootT < 4 || anim) { lowT = highT = 0; return; }
       if (fps < 45) { lowT += 0.5; highT = 0; } else if (fps > 58) { highT += 0.5; lowT = 0; } else { lowT = highT = 0; }
       const maxPR = Math.min(devicePixelRatio || 1, DPR_MAX);
-      if (lowT >= 3 && pixelRatio > 0.85) { pixelRatio = Math.max(0.85, pixelRatio - 0.15); lowT = 0; resize(); }
-      else if (highT >= 5 && pixelRatio < maxPR) { pixelRatio = Math.min(maxPR, pixelRatio + 0.25); highT = 0; resize(); }
+      if (lowT >= 2 && pixelRatio > 0.7) { pixelRatio = Math.max(0.7, pixelRatio - 0.1); lowT = 0; resize(); }
+      else if (highT >= 2.5 && pixelRatio < maxPR) { pixelRatio = Math.min(maxPR, pixelRatio + 0.15); highT = 0; resize(); }
     }
+  }
+
+  // ---------- assinatura de movimento (barata, por quadro) ----------
+  const lastCam = new THREE.Matrix4(), lastProj = new THREE.Matrix4();
+  let lastMotion = 0, motionSigVal = 0, staticN = 0;
+  function motionSig() {
+    let a = 0, k = 0;
+    scene.traverseVisible((o) => { if (o.isMesh || o.isLight) { const e = o.matrixWorld.elements; k++; a += (e[12] * 1.3 + e[13] * 2.1 + e[14] * 3.7) * ((k % 7) + 1); if (o.isLight) a += o.intensity * 0.01; } });
+    motionSigVal = Math.round(a * 300) + k * 1e9; // ~3 mm: ignora balanço do tripé/pulsos
+    return motionSigVal;
   }
 
   // ---------- laço ----------
@@ -225,7 +252,14 @@ export function createStage(canvas, opts = {}) {
     post.pre.uniforms.exposure.value = ex;
     post.cam.uniforms.time.value = still ? 0.5 : t;
     camera.updateMatrixWorld();
-    refl.update(camera);
+    // cache estático: com câmera parada e cena sem movimento, reflexo planar e GTAO (os passes mais caros depois da
+    // própria cena) só são refeitos a cada 8 quadros — o resultado é idêntico e sobra GPU para manter ≥ 45 fps.
+    const moving = !lastCam.equals(camera.matrixWorld) || !lastProj.equals(camera.projectionMatrix) || motionSig() !== lastMotion;
+    lastCam.copy(camera.matrixWorld); lastProj.copy(camera.projectionMatrix); lastMotion = motionSigVal;
+    staticN = moving ? 0 : staticN + 1;
+    const heavy = staticN < 3 || staticN % 8 === 0;
+    if (heavy) refl.update(camera);
+    if (post.gtao) post.gtao.enabled = heavy;
     post.composer.render(dt);
   }
 
@@ -260,6 +294,7 @@ export function createStage(canvas, opts = {}) {
     get post() { return post; },
     get fx() { return post.cam.uniforms; }, // nitidez, vinheta, grão, saturação... (ajuste fino)
     get pixelRatio() { return pixelRatio; },
+    get staticFrames() { return staticN; },
     render() { renderFrame(performance.now()); },
     REF1,
   };

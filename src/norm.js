@@ -90,8 +90,9 @@ export function measurementPoints(room, arr) {
     const xa = xs[j0], xb = xs[j0 + 1], xm = mid(xa, xb);
     const z = (i) => zs[clampI(i, nz)];
     const zm = (i) => (i + 1 < nz ? mid(zs[i], zs[i + 1]) : mid(zs[nz - 1], L / 2));
-    add('p1', xE0, zE0, 'Canto: centro do retângulo entre o canto e a 1ª luminária');
-    add('p2', xE1, zE1, 'Canto oposto ao P1');
+    // P1 junto à porta e P2 no canto oposto, como no croqui da planilha do usuário (a média P não muda)
+    add('p1', xE1, zE1, 'Canto: centro do retângulo entre o canto e a luminária mais próxima');
+    add('p2', xE0, zE0, 'Canto oposto ao P1');
     const k = clampI(bA + 1, nz);
     add('t1', xE0, zm(k), 'Parede lateral: entre duas luminárias da fila, a meia distância da parede');
     add('t2', xE0, z(k), 'Parede lateral: alinhado à luminária, a meia distância da parede');
@@ -207,6 +208,13 @@ export function evaluate({ E, Emin, values = {}, task = [], continuous = true })
     `Menor leitura ${task.length ? 'na tarefa' : 'medida'}: ${fmt(minPt, 1)} lux`);
   const ratioOk = maxPt > 2500 ? null : maxPt / E <= 5;
   push('5:1', 'Razão maior leitura / Ē ≤ 5:1', ratioOk, maxPt > 2500 ? '> 2.500 lux: avaliar caso a caso (contraste)' : `${fmt(maxPt / E, 2)} : 1`);
+  if (task.length) {
+    const tmin = Math.min(...taskV);
+    push('tarefa', `Leituras da área da tarefa ≥ E do Quadro 1 (${fmt(Emin, 0)} lux, −10% = ${fmt(minReq, 0)} lux)`, tmin >= minReq,
+      `Menor leitura na tarefa: ${fmt(tmin, 1)} lux`);
+  } else {
+    res.note = 'Sem leituras da área da tarefa: os critérios de 70% de Ē, 5:1 e 200 lux foram aplicados às leituras da malha do Anexo 1.';
+  }
   if (continuous) push('200', 'Tarefas contínuas: nenhuma leitura < 200 lux', minPt >= 200, `Menor leitura: ${fmt(minPt, 1)} lux`);
   const fails = res.checks.filter((c) => c.ok === false).length;
   res.verdict = fails ? 'nao-atende' : 'atende';

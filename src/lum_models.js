@@ -94,6 +94,20 @@ export function makeMaterials() {
     lumTile: new THREE.MeshStandardMaterial({ color: 0xf1f1ef, roughness: 0.7, metalness: 0, emissive: 0xffffff, emissiveIntensity: 0 }),
     tProfile: new THREE.MeshStandardMaterial({ color: 0xe9eae9, roughness: 0.38, metalness: 0.35, emissive: 0xffffff, emissiveIntensity: 0 }),
   };
+  // halo/véu do tubo (espalhamento no difusor + ofuscamento da lente): casca aditiva com queda tipo Fresnel.
+  // Radiância em nit (uL), como as luzes; não grava profundidade (fica fora da captura do IBL do RENDER).
+  M.glow = new THREE.ShaderMaterial({
+    uniforms: { uL: { value: 0 }, uColor: { value: new THREE.Color(1, 1, 1) } },
+    vertexShader: `varying vec3 vN; varying vec3 vV;
+      void main(){ vec4 mv = modelViewMatrix * vec4(position,1.0); vN = normalize(normalMatrix * normal); vV = normalize(-mv.xyz); gl_Position = projectionMatrix * mv; }`,
+    fragmentShader: `uniform float uL; uniform vec3 uColor; varying vec3 vN; varying vec3 vV;
+      void main(){ float f = max(dot(normalize(vN), normalize(vV)), 0.0); float a = pow(f, 4.0) * 0.7 + pow(f, 14.0) * 0.8;
+        gl_FragColor = vec4(uColor * uL * a, 1.0);
+        #include <tonemapping_fragment>
+        #include <colorspace_fragment>
+      }`,
+    transparent: true, depthWrite: false, blending: THREE.AdditiveBlending, toneMapped: true,
+  });
   M.tubeLed.emissiveMap = ledDotsTex(118);
   M.diffuser.emissiveMap = panelDiffuserTex();
   M.lumTile.emissiveMap = luminousTileTex();
@@ -117,6 +131,8 @@ function tubeT8(len, M, led) {
     const aluArc = 1.9; // ~110° de alumínio em cima
     g.add(mesh(tubeShell(r, len, Math.PI / 2 - aluArc / 2, aluArc), M.tubeAlu));
     g.add(mesh(tubeShell(r, len, Math.PI / 2 + aluArc / 2, Math.PI * 2 - aluArc), M.tubeLed));
+    if (M.glow) { const gg = new THREE.CapsuleGeometry(0.030, len - 0.03, 6, 20); gg.rotateZ(Math.PI / 2); gg.translate(0, -0.006, 0);
+      const gm = mesh(gg, M.glow); gm.renderOrder = 3; gm.userData.noEnv = true; gm.name = 'lum-glow'; g.add(gm); }
   } else {
     g.add(mesh(tubeShell(r, len, 0, Math.PI * 2), M.tubeFluo));
   }

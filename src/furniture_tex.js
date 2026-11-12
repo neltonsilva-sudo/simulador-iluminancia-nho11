@@ -51,7 +51,7 @@ export function furnitureTextures(renderer) {
   const fr = rng(99), speck = new Float32Array(fS * fS); for (let k = 0; k < 9000; k++) { const p = (fr() * fS * fS) | 0; speck[p] = fr() < 0.5 ? -1 : 1; }
   const fmColor = dataTex(fS, (i) => {
     const n = (sp[i] - 0.5) * 16 + (cl[i] - 0.5) * 10 + speck[i] * 18 - Math.max(0, wear[i] - 0.66) * 30;
-    return [230 + n, 217 + n, 188 + n * 0.95];
+    return [216 + n, 211 + n, 200 + n * 0.95];
   }, { srgb: true });
   const fmRough = dataTex(fS, (i) => [0, (0.50 + (sp[i] - 0.5) * 0.12 - Math.max(0, wear[i] - 0.62) * 0.55) * 255, 0]);
   const fmNormal = dataTex(fS, normalFromHeight(sp, fS, 1.4));

@@ -84,6 +84,21 @@ ok(illuminanceAt(0, 0.75, 0, lums, room, { ...spec, on: false }) === 0, 'desliga
 }
 setOpenings(openSave);
 
+// ---- 5. Luz natural (janelas) e fator por luminária (depreciada/queimada)
+{ const dl = { ...spec, on: false, daylight: 1 };
+  const nearL = illuminanceAt(-2.4, 0.75, -3.0, lums, room, dl), mid = illuminanceAt(0, 0.75, 0, lums, room, dl), nearR = illuminanceAt(2.4, 0.75, -3.0, lums, room, dl);
+  const dg2 = diagnostics(lums, room, dl);
+  console.log(`Luz natural (dia nublado 10 klx, luminárias desligadas): junto às janelas esq. ${nearL.toFixed(0)} lux · centro ${mid.toFixed(0)} lux (FLD ${(mid / 100).toFixed(2)} %) · dir. ${nearR.toFixed(0)} lux`);
+  ok(mid > 30 && mid < 400 && nearL > mid, 'luz natural: ordem de grandeza plausível (FLD central 0,3–4 %) e decrescente para o interior');
+  const both = illuminanceAt(0, 0.75, 0, lums, room, { ...spec, daylight: 1 }), night = illuminanceAt(0, 0.75, 0, lums, room, spec);
+  ok(Math.abs(both - (night + mid)) / both < 1e-6, `superposição dia + luminárias (${both.toFixed(1)} = ${night.toFixed(1)} + ${mid.toFixed(1)})`);
+  const id = lums[0].id, under = { x: lums[0].x, z: lums[0].z };
+  const E1 = illuminanceAt(under.x, 0.75, under.z, lums, room, spec), E0 = illuminanceAt(under.x, 0.75, under.z, lums, room, { ...spec, lumFactors: { [id]: 0 } }),
+    E5 = illuminanceAt(under.x, 0.75, under.z, lums, room, { ...spec, lumFactors: { [id]: 0.5 } });
+  console.log(`Luminária ${id} queimada: sob ela ${E1.toFixed(0)} → ${E0.toFixed(0)} lux (50 %: ${E5.toFixed(0)})`);
+  ok(E0 < 0.75 * E1 && Math.abs((E1 - E5) / (E1 - E0) - 0.5) < 1e-6, 'lumFactors: lâmpada queimada reduz localmente e é linear');
+}
+
 // ---- 4. Outras configurações e tipos (sanidade, sem NaN)
 for (const c of CONFIGS) {
   const a = { N: 4, M: 2, config: c.id }, L = layoutLuminaires(room, a), P = measurementPoints(room, a), s = specOf('led-t8-1x18', { config: c.id, count: 8 });

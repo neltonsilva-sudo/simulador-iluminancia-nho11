@@ -69,8 +69,10 @@ export function parecer(app, r, ctx = {}) {
   const extra = [];
   if (chk['70']) extra.push(chk['70'].ok ? `todas as leituras ${S.task?.length ? 'da área da tarefa' : ''} são iguais ou superiores a 70% de Ē (${fmt(r.bands.lim70, 1)} lux)` : `há leituras ${S.task?.length ? 'na área da tarefa ' : ''}inferiores a 70% de Ē (${fmt(r.bands.lim70, 1)} lux), o que indica distribuição pouco uniforme`);
   if (chk['5:1'] && chk['5:1'].ok !== null) extra.push(chk['5:1'].ok ? `a razão entre a maior leitura e Ē (${chk['5:1'].detail}) não excede 5:1` : `a razão entre a maior leitura e Ē (${chk['5:1'].detail}) excede 5:1`);
+  if (chk.tarefa) extra.push(chk.tarefa.ok ? `as leituras da área da tarefa atendem ao valor do Quadro 1 (${chk.tarefa.detail.toLowerCase()})` : `há leituras da área da tarefa abaixo do valor do Quadro 1 com a tolerância de 10% (${chk.tarefa.detail.toLowerCase()})`);
   if (chk['200']) extra.push(chk['200'].ok ? 'nenhuma leitura é inferior a 200 lux (tarefas contínuas)' : 'há leituras inferiores a 200 lux, valor mínimo para áreas com tarefas contínuas');
   if (extra.length) paras.push('Quanto aos demais critérios do item 5, ' + extra.join('; ') + '.');
+  if (r.note) paras.push(r.note);
   if (atende) paras.push(`Conclui-se que o ambiente ATENDE aos níveis mínimos de iluminamento da NHO-11 e, portanto, as condições de iluminação, quanto à iluminância, são adequadas conforme o item 17.8 da NR-17 (condições de conforto no ambiente de trabalho).`);
   else paras.push(`Conclui-se que o ambiente NÃO ATENDE à NHO-11 (${fails.map((c) => critName(c.id)).join('; ')}). As condições de iluminamento são, portanto, consideradas antiergonômicas, nos termos do item 17.8 da NR-17, que remete aos níveis de iluminamento da NHO-11 da Fundacentro.`);
   const recs = [];
@@ -81,6 +83,7 @@ export function parecer(app, r, ctx = {}) {
       recs.push('Substituir lâmpadas/luminárias por modelos de maior fluxo luminoso e eficiência, com temperatura de cor e IRC adequados ao Quadro 1.');
     }
     if (chk['70'] && !chk['70'].ok) recs.push('Melhorar a uniformidade: redistribuir as luminárias ou acrescentá-las sobre as áreas com leituras abaixo de 70% de Ē.');
+    if (chk.tarefa && !chk.tarefa.ok) recs.push('Prover iluminação suplementar nos postos (área da tarefa) com leituras abaixo do valor do Quadro 1, respeitando a Tabela 1 para o entorno imediato.');
     if (chk['200'] && !chk['200'].ok) recs.push('Garantir no mínimo 200 lux em todas as áreas com tarefas contínuas (iluminação geral ou suplementar).');
     recs.push('Implantar manutenção preventiva do sistema de iluminação (limpeza de luminárias, troca programada de lâmpadas) — item 7 da NHO-11.');
     recs.push('Após as adequações, repetir a avaliação nas mesmas condições (período noturno, sem contribuição de luz natural).');
@@ -88,7 +91,7 @@ export function parecer(app, r, ctx = {}) {
   return { title: atende ? 'Atende à NHO-11' : 'Não atende à NHO-11', tone: atende ? 'ok' : 'bad', paras, recs };
 }
 export function critName(id) {
-  return { emin: 'iluminância média abaixo do Quadro 1', '70': 'leituras abaixo de 70% de Ē', '5:1': 'razão máxima/média acima de 5:1', '200': 'leituras abaixo de 200 lux em tarefas contínuas' }[id] || id;
+  return { emin: 'iluminância média abaixo do Quadro 1', '70': 'leituras abaixo de 70% de Ē', '5:1': 'razão máxima/média acima de 5:1', '200': 'leituras abaixo de 200 lux em tarefas contínuas', tarefa: 'leituras da área da tarefa abaixo do Quadro 1' }[id] || id;
 }
 
 /** "A = [num] / den = x" → HTML com fração empilhada. */
@@ -98,4 +101,18 @@ export function fracHTML(s) {
   const m = /^(.*=\s)(.*)$/.exec(num); if (m && !m[2].includes('=')) { lhs = m[1]; num = m[2]; }
   const t = /^(\S+)(\s=\s.*)$/.exec(den); if (t) { den = t[1]; tail = t[2]; }
   return `${esc(lhs)}<span class="frac"><span>${esc(num)}</span><span>${esc(den)}</span></span>${esc(tail)}`;
+}
+
+/** Expansão da fórmula com as médias em 3 casas (padrão da planilha). */
+export function expandedUI(cfgId, g = {}, { N, M, L, W }) {
+  const f = (x) => fmt(x, 3); const { P, T, Q, R } = g;
+  switch (+cfgId) {
+    case 1: return `[${f(R)}·(${N}−1)·(${M}−1) + ${f(Q)}·(${N}−1) + ${f(T)}·(${M}−1) + ${f(P)}] / (${N}·${M})`;
+    case 2: return `(p1 + p2 + p3 + p4) / 4 = ${f(P)}`;
+    case 3: return `[${f(Q)}·(${N}−1) + ${f(P)}] / ${N}`;
+    case 4: return `[${f(R)}·${N}·(${M}−1) + ${f(Q)}·${N} + ${f(T)}·(${M}−1) + ${f(P)}] / [${M}·(${N}+1)]`;
+    case 5: return `[${f(Q)}·${N} + ${f(P)}] / (${N}+1)`;
+    case 6: return `[${f(R)}·(${fmt(L, 2)}−2,4)·(${fmt(W, 2)}−2,4) + 2,4·${f(Q)}·(${fmt(L, 2)}−2,4) + 2,4·${f(T)}·(${fmt(W, 2)}−2,4) + 5,76·${f(P)}] / (${fmt(W, 2)}·${fmt(L, 2)})`;
+  }
+  return '';
 }

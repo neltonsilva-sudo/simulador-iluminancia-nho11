@@ -3,8 +3,8 @@
 import { icon } from './ui_icons.js';
 import { createEnvPicker } from './ui_env.js';
 import { croquiFromApp, miniFigure } from './ui_croqui.js';
-import { openReport, REPORT_FIELDS } from './ui_report.js';
-import { esc, fmt, parseNum, groupInfo, GROUP_COLORS, ADJ_REASONS, adjustedE, parecer, fracHTML } from './ui_text.js';
+import { openReportStudio } from './ui_report.js';
+import { esc, fmt, parseNum, groupInfo, GROUP_COLORS, ADJ_REASONS, adjustedE, parecer, fracHTML, expandedUI } from './ui_text.js';
 
 const KEY = 'nho11-twin-ui-v1';
 const loadStore = () => { try { return JSON.parse(localStorage.getItem(KEY) || '{}') || {}; } catch { return {}; } };
@@ -52,9 +52,9 @@ export function createUI(root, app) {
     <button type="button" class="sheet-grab" aria-label="Redimensionar painel"><span></span></button>
     <header class="ph">
       <div class="ph-mark">${MARK}</div>
-      <div class="ph-t"><h1>Iluminância <span>NHO-11</span></h1><p>Gêmeo digital · avaliação de iluminamento</p></div>
+      <div class="ph-t"><h1>Iluminância <span>NHO-11</span></h1><p>Avaliação de iluminamento</p></div>
       <div class="ph-a">
-        <button type="button" class="ib" data-act="report" aria-label="Relatório imprimível" title="Relatório imprimível">${icon('doc')}</button>
+        <button type="button" class="ib" data-act="report" aria-label="Emitir relatório técnico" title="Emitir relatório técnico">${icon('doc')}</button>
         <button type="button" class="ib" data-act="theme" aria-label="Tema" title="Tema">${icon('auto')}</button>
         <button type="button" class="ib desk" data-act="collapse" aria-label="Recolher painel" title="Recolher painel">${icon('chevL')}</button>
       </div>
@@ -76,6 +76,7 @@ export function createUI(root, app) {
       <span class="hud-k">Ē</span><span class="hud-v">—</span><span class="hud-u">lux</span><span class="chip hud-chip">—</span>
     </button>
     <div class="hud-sub"><span class="hud-req"></span><span class="hud-prog"><i></i></span><span class="hud-cnt"></span></div>
+    <button type="button" class="hud-rep" data-hud="report">${icon('doc')}<span>Emitir relatório técnico</span></button>
   </div>
   <div class="dock" role="toolbar" aria-label="Vistas e camadas">
     <div class="dock-seg" role="group" aria-label="Vista">${VIEWS.map(([k, l, ic]) => `<button type="button" class="dk" data-view="${k}" aria-pressed="false" title="${l}">${icon(ic)}<span>${l}</span></button>`).join('')}</div>
@@ -214,6 +215,7 @@ export function createUI(root, app) {
     <div class="sec">
       <h3 class="sh">Verificações <small>NHO-11, item 5</small></h3>
       <ul class="checks"></ul>
+      <p class="hint res-note" hidden></p>
     </div>
     <div class="sec">
       <label class="lbl" for="task">Leituras na área da tarefa <small>opcional</small></label>
@@ -224,11 +226,8 @@ export function createUI(root, app) {
       <div class="par-h"><h3 class="sh">Parecer técnico</h3><button type="button" class="btn sm" data-act="copy">Copiar</button></div>
       <div class="parecer"></div>
     </div>
-    <details class="sec rdata">
-      <summary>${icon('doc')} Dados do relatório <small>opcional · em branco no impresso</small>${icon('chevD', 'sm sum-ch')}</summary>
-      <div class="rfields">${REPORT_FIELDS.map(([k, l, t]) => `<div class="rf${t === 'area' ? ' wide' : ''}"><label for="rf-${k}">${l}</label>${t === 'area' ? `<textarea id="rf-${k}" class="inp" rows="2" data-rf="${k}"></textarea>` : `<input id="rf-${k}" class="inp" type="${t === 'date' ? 'date' : 'text'}" data-rf="${k}" autocomplete="off">`}</div>`).join('')}</div>
-    </details>
-    <button type="button" class="btn btn-primary wide" data-act="report">${icon('print')}<span>Gerar relatório imprimível</span></button>`;
+
+    <button type="button" class="btn btn-primary wide" data-act="report">${icon('doc')}<span>Emitir relatório técnico</span></button>`;
   }
   function paneCro() {
     return `
@@ -392,9 +391,8 @@ export function createUI(root, app) {
 
   // ---------- resultado ----------
   $(root, '#task').addEventListener('input', debounce((e) => { const arr = e.target.value.split(/[;\n\t\r]+|\s+/).map(parseNum).filter((v) => v != null); app.set({ task: arr }); }, 250));
-  $$(root, '[data-rf]').forEach((i) => { i.value = store.report[i.dataset.rf] || ''; i.addEventListener('input', () => { store.report[i.dataset.rf] = i.value; persist(); }); });
   function ctx() { return { adjust: store.adjust, adjReason: store.adjReason, adjWhy: store.adjWhy, baseE: baseE() }; }
-  function doReport() { try { openReport(app, store.report, ctx()); } catch (e) { console.error('[ui] relatório', e); toast('Não foi possível gerar o relatório.'); } }
+  function doReport() { try { if (!document.getElementById('nho-report')) openReportStudio(app, { ctx, toast }); } catch (e) { console.error('[ui] relatório', e); toast('Não foi possível gerar o relatório.'); } }
   function copyParecer() {
     const r = app.results(); const p = parecer(app, r, ctx()); const t = [p.title.toUpperCase(), ...p.paras, ...(p.recs.length ? ['Recomendações:', ...p.recs.map((x) => '• ' + x)] : [])].join('\n\n');
     (navigator.clipboard?.writeText(t) || Promise.reject()).then(() => toast('Parecer copiado.'), () => toast('Não foi possível copiar.'));
@@ -424,6 +422,7 @@ export function createUI(root, app) {
   }
 
   // ---------- HUD / dock ----------
+  $(root, '.hud-rep').onclick = () => doReport();
   $(root, '.hud-main').onclick = () => { if (store.collapsed) setCollapsed(false); if (isMobile() && panel.dataset.sheet === 'peek') setSheet('half'); setTab('res'); };
   $(root, '.dock').addEventListener('click', (e) => {
     const b = e.target.closest('.dk'); if (!b) return;
@@ -480,7 +479,7 @@ export function createUI(root, app) {
   function updLum() {
     const cfg = NORM.configById(S.config);
     const kind = cfg.layout === 'luminous' ? 'luminous' : (cfg.layout === 'continuous' || cfg.layout === 'continuous1') ? 'continuous' : 'discrete';
-    const sug = NORM.suggestConfig(S.N, S.M, kind);
+    const sug = cfg.layout === 'central' ? 2 : NORM.suggestConfig(S.N, ['single', 'continuous1'].includes(cfg.layout) ? 1 : S.M, kind);
     $$(root, '.cfg').forEach((b) => { const id = +b.dataset.cfg; b.setAttribute('aria-checked', id === cfg.id); b.tabIndex = id === cfg.id ? 0 : -1; b.classList.toggle('is-sug', id === sug && id !== cfg.id); });
     const sg = $(root, '.suggest');
     if (sug !== cfg.id && cfg.layout !== 'central') { const c2 = NORM.configById(sug); sg.hidden = false;
@@ -532,7 +531,7 @@ export function createUI(root, app) {
     $(root, '.gmeans').innerHTML = Object.entries(r.groups || {}).map(([G, v]) => `<div class="gm" style="--g:${GROUP_COLORS[G]}"><span class="gm-k">${G}</span><b>${isFinite(v) ? fmt(v, 2) : '—'}</b><small>${esc(groupInfo(cfg.layout)[G] || '')}</small></div>`).join('');
     $(root, '.res-fig').textContent = `Anexo 1 · Fig. ${cfg.fig}`;
     $(root, '.c-gen').innerHTML = fracHTML(cfg.formula);
-    $(root, '.c-exp').innerHTML = `${fracHTML('Ē = ' + r.expanded)}<b class="c-res">Ē = ${ok ? fmt(r.E, 2) : '—'} lux</b>`;
+    $(root, '.c-exp').innerHTML = `${fracHTML('Ē = ' + expandedUI(cfg.id, r.groups, { N: S.N, M: S.M, L: S.room.L, W: S.room.W }))}<b class="c-res">Ē = ${ok ? fmt(r.E, 2) : '—'} lux</b>`;
     const B = r.bands;
     $(root, '.bands').innerHTML = ok && B ? `
       <div class="band"><span>Ē</span><b>${fmt(r.E, 2)}</b><em>faixa ± 15%</em><b>${fmt(B.E15[0], 2)} – ${fmt(B.E15[1], 2)}</b></div>
@@ -542,6 +541,7 @@ export function createUI(root, app) {
       : `<p class="empty">Preencha todas as leituras para calcular as faixas.</p>`;
     $(root, '.checks').innerHTML = (r.checks || []).length ? r.checks.map((c) => `<li class="${c.ok === null ? 'na' : c.ok ? 'ok' : 'bad'}"><span class="ck">${icon(c.ok === null ? 'dash' : c.ok ? 'check' : 'x')}</span><span><b>${esc(c.label)}</b><small>${esc(c.detail)}</small></span></li>`).join('')
       : `<li class="na"><span class="ck">${icon('dash')}</span><span><b>Aguardando leituras</b><small>Faltam ${r.missing.length}: ${esc(r.missing.map((x) => x.toUpperCase()).join(', '))}</small></span></li>`;
+    const rn = $(root, '.res-note'); rn.hidden = !r.note; rn.innerHTML = r.note ? `${icon('info')}<span>${esc(r.note)}</span>` : '';
     const p = parecer(app, r, ctx());
     $(root, '.parecer').className = 'parecer ' + p.tone;
     $(root, '.parecer').innerHTML = `<div class="par-t">${icon(p.tone === 'ok' ? 'check' : p.tone === 'bad' ? 'warn' : 'info')}<b>${esc(p.title)}</b></div>${p.paras.map((x) => `<p>${esc(x)}</p>`).join('')}${p.recs.length ? `<div class="par-r"><b>Recomendações</b><ul>${p.recs.map((x) => `<li>${esc(x)}</li>`).join('')}</ul></div>` : ''}`;
@@ -553,9 +553,9 @@ export function createUI(root, app) {
   }
   function updHUD() {
     const r = app.results(); const ok = isFinite(r.E);
-    $(root, '.hud-v').textContent = ok ? fmt(r.E, 1) : '—';
+    $(root, '.hud-v').textContent = ok ? fmt(r.E, 1) : '—'; $(root, '.hud-v').classList.toggle('empty', !ok);
     setChip($(root, '.hud-chip'), r);
-    $(root, '.hud-req').textContent = `Quadro 1: ${fmt(S.Emin, 0)} lux`;
+    $(root, '.hud-req').textContent = `${store.adjust ? 'E adotado' : 'Quadro 1'}: ${fmt(S.Emin, 0)} lux`;
     const ids = order(); const n = ids.filter((id) => isNum(S.values[id])).length;
     $(root, '.hud-prog i').style.width = (100 * n / ids.length) + '%'; $(root, '.hud-cnt').textContent = `${n}/${ids.length}`;
     $(root, '.hud').classList.toggle('has', ok);

@@ -15,6 +15,7 @@ try {
     if (d.method === 'Runtime.exceptionThrown') logs.push('EXC ' + JSON.stringify(d.params.exceptionDetails).slice(0, 300));
     if (d.method === 'Runtime.consoleAPICalled' && /error|warn/.test(d.params.type)) logs.push(d.params.type + ' ' + d.params.args.map((a) => a.value ?? a.description).join(' ').slice(0, 300)); };
   await send('Runtime.enable'); await send('Page.enable');
+  await send('Page.addScriptToEvaluateOnNewDocument', { source: `(()=>{const W=window.Worker; window.__wmsgs=[]; window.Worker=function(u,o){const w=new W(u,o); w.addEventListener('message',e=>{const g=e.data&&e.data.grid; if(g) window.__wmsgs.push({seq:e.data.seq,Emin:g.Emin,Emax:g.Emax,Emed:g.Emed,U0:g.U0,nx:g.nx,nz:g.nz,ms:e.data.ms,xs0:g.xs[0],zs0:g.zs[0],E:Array.from(g.E.slice?g.E:[]).filter((_,i)=>i%997==0)});}); return w;}; window.Worker.prototype=W.prototype;})()` });
   await send('Emulation.setDeviceMetricsOverride', { width: 1440, height: 900, deviceScaleFactor: 1, mobile: false });
   await send('Page.navigate', { url: `http://localhost:8802/?${qs}` }); await sleep(+waitS * 1000);
   const r = await send('Runtime.evaluate', { expression: expr, awaitPromise: true, returnByValue: true });

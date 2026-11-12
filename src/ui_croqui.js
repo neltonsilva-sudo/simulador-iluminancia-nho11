@@ -65,22 +65,24 @@ export function croquiSVG(o) {
     for (const x of xl) { const [a, b] = map(x, -L / 2), [d, e] = map(x, L / 2); out.push(`<line x1="${a}" y1="${b}" x2="${d}" y2="${e}" ${dashA}/>`); }
     for (const z of zl) { const [a, b] = map(-W / 2, z), [d, e] = map(W / 2, z); out.push(`<line x1="${a}" y1="${b}" x2="${d}" y2="${e}" ${dashA}/>`); }
     const XL = uniq([-W / 2, ...xl, W / 2]), ZL = uniq([-L / 2, ...zl, L / 2]);
-    const span = (v, arr) => { const on = arr.findIndex((a) => Math.abs(a - v) < 0.015); if (on >= 0) { const pv = arr[on - 1], nx = arr[on + 1]; if (pv == null || nx == null) return null; const d = Math.min(v - pv, nx - v); return [v - d, v + d]; }
+    const span = (v, arr) => { const on = arr.findIndex((a) => Math.abs(a - v) < 0.015); if (on >= 0) return null; // só o X limpo de cada célula (como no croqui da planilha)
       const i = arr.findIndex((a) => a > v); if (i <= 0) return null; const a0 = arr[i - 1], a1 = arr[i]; return Math.abs((a0 + a1) / 2 - v) < 0.02 ? [a0, a1] : null; };
     const seen = new Set();
     for (const p of pts) {
       const sx = span(p.x, XL), sz = span(p.z, ZL); if (!sx || !sz) continue;
       const key = sx.concat(sz).map((v) => v.toFixed(2)).join(); if (seen.has(key)) continue; seen.add(key);
       const [a, b] = map(sx[0], sz[0]), [d, e] = map(sx[1], sz[1]), [f, g] = map(sx[0], sz[1]), [h, k] = map(sx[1], sz[0]);
-      out.push(`<path d="M${a} ${b}L${d} ${e}M${f} ${g}L${h} ${k}" stroke="${c.dash}" stroke-opacity=".6" stroke-width="1" stroke-dasharray="6 5" fill="none"/>`);
+      out.push(`<path d="M${a} ${b}L${d} ${e}M${f} ${g}L${h} ${k}" stroke="${c.dash}" stroke-opacity=".75" stroke-width="1" stroke-dasharray="6 5" fill="none"/>`);
     }
   }
   // luminárias
+  const obst = [];
   for (const l of lums) {
     const vis = mini ? Math.max(l.wid, 0.32) : Math.max(l.wid, 0.2);
     const r = l.axis === 'x' ? rectXZ(l.x - l.len / 2, l.z - vis / 2, l.x + l.len / 2, l.z + vis / 2) : rectXZ(l.x - vis / 2, l.z - l.len / 2, l.x + vis / 2, l.z + l.len / 2);
     if (mini) out.push(`<rect x="${r.x}" y="${r.y}" width="${r.w}" height="${r.h}" rx="5" fill="currentColor" fill-opacity=".85"/>`);
     else {
+      obst.push({ x: r.x - 4, y: r.y - 4, w: r.w + 8, h: r.h + 8 });
       out.push(`<rect x="${r.x - 5}" y="${r.y - 5}" width="${r.w + 10}" height="${r.h + 10}" rx="8" fill="${o.on === false ? 'none' : c.lumGlow}"/>`);
       out.push(`<rect x="${r.x}" y="${r.y}" width="${r.w}" height="${r.h}" fill="${c.lum}" stroke="${c.lumStroke}" stroke-width="1.4"/>`);
       const [cx, cy] = map(l.x, l.z);
@@ -90,6 +92,7 @@ export function croquiSVG(o) {
   }
   // pontos
   const vals = o.values || {}; const lim = o.bands?.lim70;
+  if (!mini) for (const p of pts) { const [u, v] = map(p.x, p.z); obst.push({ x: u - 10, y: v - 10, w: 20, h: 20 }); }
   for (const p of pts) {
     const [u, v] = map(p.x, p.z); const col = GROUP_COLORS[p.group] || '#888';
     if (mini) { out.push(`<circle cx="${u}" cy="${v}" r="17" fill="${col}" stroke="${o.dark ? '#111' : '#fff'}" stroke-width="5"/>`); continue; }
@@ -100,10 +103,15 @@ export function croquiSVG(o) {
     if (o.active === p.id) out.push(`<circle cx="${u}" cy="${v}" r="19" fill="none" stroke="${col}" stroke-width="3.5" opacity=".9"/>`);
     out.push(`<circle cx="${u}" cy="${v}" r="9" fill="${col}" stroke="${c.paper}" stroke-width="3"/>`);
     if (o.labels !== false) {
-      const right = rot ? (v > mT + RH * 0.15) : (u < mL + RW - 70);
+      const tw = Math.max(p.label.length * 16, has && o.values !== false ? fmt(+val, 1).length * 11.5 : 0) + 4, th = has && o.values !== false ? 50 : 28;
+      const prefRight = rot ? (v > mT + RH * 0.15) : (u < mL + RW - 70);
+      const cands = []; for (const by of [v - 5, v - 32, v + 26]) for (const r of prefRight ? [true, false] : [false, true]) cands.push([r, by]);
+      const box = (r, by) => ({ x: r ? u + 13 : u - 13 - tw, y: by - 21, w: tw, h: th });
+      const hit = (a) => obst.some((b) => a.x < b.x + b.w && a.x + a.w > b.x && a.y < b.y + b.h && a.y + a.h > b.y) || a.x < mL - 2 || a.x + a.w > mL + RW + 2 || a.y < mT - 2 || a.y + a.h > mT + RH + 2;
+      const [right, by] = cands.find(([r, y]) => !hit(box(r, y))) || cands[0]; obst.push(box(right, by));
       const lx = right ? u + 13 : u - 13, anchor = right ? 'start' : 'end';
-      out.push(`<text x="${lx}" y="${v - 5}" text-anchor="${anchor}" font-size="25" font-weight="700" fill="${c.text}" paint-order="stroke" stroke="${c.paper}" stroke-width="4" stroke-linejoin="round">${p.label}</text>`);
-      if (o.values !== false && has) out.push(`<text x="${lx}" y="${v + 19}" text-anchor="${anchor}" font-size="20" font-weight="600" fill="${low ? '#d6342c' : c.sub}" paint-order="stroke" stroke="${c.paper}" stroke-width="4" stroke-linejoin="round" style="font-variant-numeric:tabular-nums">${fmt(+val, 1)}</text>`);
+      out.push(`<text x="${lx}" y="${by}" text-anchor="${anchor}" font-size="25" font-weight="700" fill="${c.text}" paint-order="stroke" stroke="${c.paper}" stroke-width="4" stroke-linejoin="round">${p.label}</text>`);
+      if (o.values !== false && has) out.push(`<text x="${lx}" y="${by + 24}" text-anchor="${anchor}" font-size="20" font-weight="600" fill="${low ? '#d6342c' : c.sub}" paint-order="stroke" stroke="${c.paper}" stroke-width="4" stroke-linejoin="round" style="font-variant-numeric:tabular-nums">${fmt(+val, 1)}</text>`);
     }
     out.push('</g>');
   }

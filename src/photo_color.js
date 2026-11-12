@@ -25,6 +25,14 @@ export function niceRange(mn, mx) {
   const lo = Math.max(0, Math.floor(mn / step) * step), hi = Math.ceil(mx / step) * step;
   return { lo, hi: hi > lo ? hi : lo + step, step };
 }
+/** Escala de cores ANCORADA em 0 até ≥ max(Emáx, E exigido pelo Quadro 1): 210 lux numa sala que exige 500 não fica
+ *  “vermelha”. Topo arredondado para um valor redondo (≈5–6 divisões). */
+export function anchoredRange(Emax, Ereq = 0) {
+  const top = Math.max(Emax || 0, Ereq || 0, 1);
+  const steps = [5, 10, 25, 50, 100, 250, 500, 1000, 2500, 5000];
+  const step = steps.find((st) => top / st <= 6) || 5000;
+  return { lo: 0, hi: Math.ceil(top / step - 1e-9) * step, step };
+}
 /** Níveis das linhas isolux: múltiplos do passo dentro de (Emín, Emáx); os da escala NHO são marcados `major`. */
 export function isoLevels(mn, mx, range = niceRange(mn, mx)) {
   const out = [];

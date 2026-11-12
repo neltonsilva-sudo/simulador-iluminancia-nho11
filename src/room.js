@@ -9,7 +9,7 @@ import * as TX from './room_tex.js';
 import { addBox, addPlane, wallFrame, buildWindow, buildDoor, buildPoster, buildSwitch, buildConduit } from './room_parts.js';
 
 const WALL_T = 0.075;          // espessura do painel sanduíche (profundidade do vão)
-const WIN_W = 1.30, WIN_H = 0.86, WIN_HEAD = 2.06;  // janelas de correr (proporção da foto ref1) — verga a 2,06 m
+const WIN_W = 1.30, WIN_H = 0.95, WIN_HEAD = 2.20;  // janelas de correr (proporção da foto ref1) — verga a 2,06 m
 const DOOR_W = 0.84, DOOR_H = 2.10;
 const CH_D = 0.042;            // altura dos perfis C longitudinais (encostados no teto)
 const BEAM_D = 0.075;          // altura das vigas C transversais (abaixo dos longitudinais)
@@ -19,14 +19,16 @@ function makeMaterials() {
   const M = {
     wall: new THREE.MeshPhysicalMaterial({ name: 'room.wall', color: 0xffffff, map: w.map, roughnessMap: w.roughnessMap, roughness: 1, normalMap: w.normalMap, normalScale: new THREE.Vector2(0.45, 0.45), vertexColors: true, clearcoat: 0.55, clearcoatRoughness: 0.15, metalness: 0 }),
     ceiling: new THREE.MeshPhysicalMaterial({ name: 'room.ceiling', color: 0xffffff, map: c.map, roughnessMap: c.roughnessMap, roughness: 1, normalMap: c.normalMap, normalScale: new THREE.Vector2(0.3, 0.3), vertexColors: true, clearcoat: 0.25, clearcoatRoughness: 0.28 }),
-    floor: new THREE.MeshPhysicalMaterial({ name: 'room.floor', color: 0xffffff, map: f.map, roughnessMap: f.roughnessMap, roughness: 1, normalMap: f.normalMap, normalScale: new THREE.Vector2(0.45, 0.45), vertexColors: true, clearcoat: 0.45, clearcoatMap: f.maskMap, clearcoatRoughness: 0.12, clearcoatRoughnessMap: f.maskMap, specularIntensity: 0.75, specularIntensityMap: f.maskMap }),
+    floor: new THREE.MeshPhysicalMaterial({ name: 'room.floor', color: 0xffffff, map: f.map, roughnessMap: f.roughnessMap, roughness: 1, normalMap: f.normalMap, normalScale: new THREE.Vector2(0.45, 0.45), vertexColors: true, clearcoat: 0.5, clearcoatMap: f.maskMap, clearcoatRoughness: 0.06, clearcoatRoughnessMap: f.maskMap, specularIntensity: 0.75, specularIntensityMap: f.maskMap }),
     joint: new THREE.MeshStandardMaterial({ name: 'room.joint', color: 0xe4e5e2, map: TX.jointTexture(), roughness: 0.5 }),
     galv: new THREE.MeshStandardMaterial({ name: 'room.galv', color: 0xffffff, map: g.map, roughnessMap: g.roughnessMap, roughness: 1, normalMap: g.normalMap, normalScale: new THREE.Vector2(0.4, 0.4), metalness: 0.55 }),
     chDark: new THREE.MeshStandardMaterial({ name: 'room.chDark', color: 0x34373b, roughness: 0.7, metalness: 0.2 }),
     tjoint: new THREE.MeshStandardMaterial({ name: 'room.tjoint', color: 0x55595d, roughness: 0.55, metalness: 0.3 }),
     trim: new THREE.MeshStandardMaterial({ name: 'room.trim', color: 0x8c9094, roughness: 0.45, metalness: 0.35 }),
     cornice: new THREE.MeshStandardMaterial({ name: 'room.cornice', color: 0xa9adb0, roughness: 0.4, metalness: 0.45 }),
-    post: new THREE.MeshPhysicalMaterial({ name: 'room.post', color: 0xdcdedb, roughness: 0.38, clearcoat: 0.2, clearcoatRoughness: 0.3 }),
+    postEdge: new THREE.MeshStandardMaterial({ name: 'room.postEdge', color: 0x9ea2a5, roughness: 0.5 }),
+    exterior: new THREE.MeshBasicMaterial({ name: 'room.exterior', map: TX.exteriorTexture(), toneMapped: false, color: 0xe4ddd0 }),
+    post: new THREE.MeshPhysicalMaterial({ name: 'room.post', color: 0xc8cbc8, roughness: 0.38, clearcoat: 0.2, clearcoatRoughness: 0.3 }),
     cap: new THREE.MeshStandardMaterial({ name: 'room.cap', color: 0x9a9ea1, roughness: 0.6 }),
     alu: new THREE.MeshStandardMaterial({ name: 'room.alu', color: 0xd9dcde, roughness: 0.32, metalness: 0.45, normalMap: g.normalMap, normalScale: new THREE.Vector2(0.15, 0.15) }),
     dark: new THREE.MeshStandardMaterial({ name: 'room.dark', color: 0x1d1f21, roughness: 0.6 }),
@@ -44,6 +46,8 @@ function makeMaterials() {
     conduit: new THREE.MeshStandardMaterial({ name: 'room.conduit', color: 0x141516, roughness: 0.5 }),
     pvc: new THREE.MeshStandardMaterial({ name: 'room.pvc', color: 0xe9ebe7, roughness: 0.5 }),
   };
+  M.wall.onBeforeCompile = (sh) => { sh.fragmentShader = sh.fragmentShader.replace('#include <roughnessmap_fragment>', '#include <roughnessmap_fragment>\n#ifdef USE_COLOR_ALPHA\n roughnessFactor = clamp(roughnessFactor * vColor.a, 0.04, 1.0);\n#endif'); };
+  M.wall.customProgramCacheKey = () => 'room.wall.rA';
   for (let v = 0; v < 4; v++) M['poster' + v] = new THREE.MeshPhysicalMaterial({ name: 'room.poster' + v, map: TX.posterTexture(v), roughness: 0.38, clearcoat: 0.5, clearcoatRoughness: 0.12 });
   return M;
 }
@@ -59,7 +63,7 @@ function steps(len, step) { const n = Math.max(1, Math.ceil(len / step)); return
 
 /** Superfície em grade (sem índice compartilhado entre células) com cor por vértice (AO/sujeira/variação por painel).
  * p = o + ud·u + vd·v ; normal = ud × vd. holes: [{u0,u1,v0,v1}] — células dentro são omitidas. */
-function gridSurface({ o, ud, vd, us, vs, holes = [], color, uvOff = [0, 0], uvSign = [1, 1] }) {
+function gridSurface({ o, ud, vd, us, vs, holes = [], color, uvOff = [0, 0], uvSign = [1, 1], cs = 3 }) {
   const n = new THREE.Vector3(...ud).cross(new THREE.Vector3(...vd)).normalize();
   const pos = [], nor = [], uv = [], col = [], idx = []; let vi = 0;
   for (let i = 0; i < us.length - 1; i++) for (let j = 0; j < vs.length - 1; j++) {
@@ -68,13 +72,13 @@ function gridSurface({ o, ud, vd, us, vs, holes = [], color, uvOff = [0, 0], uvS
     for (const [u, v] of [[u0, v0], [u1, v0], [u1, v1], [u0, v1]]) {
       pos.push(o[0] + ud[0] * u + vd[0] * v, o[1] + ud[1] * u + vd[1] * v, o[2] + ud[2] * u + vd[2] * v);
       nor.push(n.x, n.y, n.z); uv.push(uvOff[0] + uvSign[0] * u, uvOff[1] + uvSign[1] * v);
-      const c = color(u, v, uc, vc); col.push(c[0], c[1], c[2]);
+      const c = color(u, v, uc, vc); for (let q = 0; q < cs; q++) col.push(c[q] ?? 1);
     }
     idx.push(vi, vi + 1, vi + 2, vi, vi + 2, vi + 3); vi += 4;
   }
   const g = new THREE.BufferGeometry();
   g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3)); g.setAttribute('normal', new THREE.Float32BufferAttribute(nor, 3));
-  g.setAttribute('uv', new THREE.Float32BufferAttribute(uv, 2)); g.setAttribute('color', new THREE.Float32BufferAttribute(col, 3)); g.setIndex(idx);
+  g.setAttribute('uv', new THREE.Float32BufferAttribute(uv, 2)); g.setAttribute('color', new THREE.Float32BufferAttribute(col, cs)); g.setIndex(idx);
   return g;
 }
 /** quadrilátero com cor constante (para os vãos/requadros) — orienta o winding pela normal desejada */
@@ -85,7 +89,7 @@ function quadGeo(p0, p1, p2, p3, nrm, c, uvs) {
   g.setAttribute('position', new THREE.Float32BufferAttribute([...p0, ...p1, ...p2, ...p3], 3));
   g.setAttribute('normal', new THREE.Float32BufferAttribute([...nrm, ...nrm, ...nrm, ...nrm], 3));
   g.setAttribute('uv', new THREE.Float32BufferAttribute(uvs, 2));
-  g.setAttribute('color', new THREE.Float32BufferAttribute([...c, ...c, ...c, ...c], 3));
+  g.setAttribute('color', new THREE.Float32BufferAttribute([...c, ...c, ...c, ...c], c.length));
   g.setIndex(flip ? [0, 2, 1, 0, 3, 2] : [0, 1, 2, 0, 2, 3]); return g;
 }
 
@@ -113,7 +117,7 @@ export function buildRoom(stage, room) {
   try { TX.setAnisotropy(stage.renderer.capabilities.getMaxAnisotropy()); } catch {}
   const group = new THREE.Group(); group.name = 'room'; stage.scene.add(group);
   const M = makeMaterials();
-  try { stage.floorReflection?.apply?.(M.floor, { strength: 0.9 }); } catch (e) { console.warn('[room] floorReflection', e); }
+  try { stage.floorReflection?.apply?.(M.floor, { strength: 1.0 }); } catch (e) { console.warn('[room] floorReflection', e); }
   let wallGroups = [], ceilStruct = null, curH = room.H;
 
   // visibilidade “casa de bonecas”: anexos de uma parede somem quando a câmera está do lado de fora dela;
@@ -178,7 +182,8 @@ export function buildRoom(stage, room) {
       const extraV = [0.015, 0.04, 0.08, 0.14, 0.22, 0.32, 0.45, H - 0.015, H - 0.04, H - 0.09, H - 0.17, H - 0.3];
       for (const h of w.holes) extraV.push(h.v0, h.v1, h.v1 + 0.05, h.v0 - 0.05);
       const vs = uniq([...steps(H, 0.35), ...extraV], 0, H);
-      const pv = (p) => 1 + (hash1(p * 7 + w.seed * 131) - 0.5) * 0.05;
+      const pv = (p) => 1 + (hash1(p * 7 + w.seed * 131) - 0.5) * 0.08;
+      const pr = (p) => 0.78 + hash1(p * 11 + w.seed * 57) * 0.5; // rugosidade relativa por painel (canal alfa)
       const color = (u, v, uc) => {
         const pnl = Math.floor(uc / mod);
         const du = Math.min(u, w.len - u), dc = H - v;
@@ -186,18 +191,18 @@ export function buildRoom(stage, room) {
         // sombra suave sob a verga e ao redor dos vãos
         for (const h of w.holes) { const dx = Math.max(h.u0 - u, 0, u - h.u1), dy = Math.max(h.v0 - v, 0, v - h.v1); const d = Math.hypot(dx, dy); a *= 1 - 0.05 * Math.exp(-d / 0.05); }
         a *= pv(pnl) * (1 + (vn2(u * 0.8, v * 0.8, w.seed) - 0.5) * 0.035) * (1 - 0.025 * Math.abs(((uc % mod) / mod) - 0.5) * 2);
-        const dirt = Math.exp(-v / 0.12) * 0.06;
-        return [a * (1 - dirt * 0.6), a * (1 - dirt * 0.8), a * (1 - dirt)];
+        const dirt = Math.exp(-v / 0.12) * 0.06 + Math.max(0, 1 - v / 0.4) ** 2 * 0.05 * (0.5 + vn2(u * 3.1, 7.7, w.seed + 40));
+        return [a * (1 - dirt * 0.6), a * (1 - dirt * 0.8), a * (1 - dirt), pr(pnl) * (1 + Math.max(0, 1 - v / 0.4) * 0.25)];
       };
       const col = {};
-      const surf = gridSurface({ o: w.o, ud: w.ud, vd: up, us, vs, holes: w.holes, color, uvOff: [w.uvo, 0] });
+      const surf = gridSurface({ o: w.o, ud: w.ud, vd: up, us, vs, holes: w.holes, color, uvOff: [w.uvo, 0], cs: 4 });
       (col.wall ||= []).push(surf);
       // requadros dos vãos (espessura do painel)
       for (const h of w.holes) {
         const P = (u, v, d) => [w.o[0] + w.ud[0] * u + w.n[0] * d, v, w.o[2] + w.ud[2] * u + w.n[2] * d];
-        const c = [0.86, 0.86, 0.86], t = -WALL_T;
+        const c = [0.86, 0.86, 0.86, 1], t = -WALL_T;
         const tw = h.u1 - h.u0, th = h.v1 - h.v0;
-        col.wall.push(quadGeo(P(h.u0, h.v1, 0), P(h.u1, h.v1, 0), P(h.u1, h.v1, t), P(h.u0, h.v1, t), [0, -1, 0], [0.8, 0.8, 0.8], [0, 0, tw, 0, tw, WALL_T, 0, WALL_T]));
+        col.wall.push(quadGeo(P(h.u0, h.v1, 0), P(h.u1, h.v1, 0), P(h.u1, h.v1, t), P(h.u0, h.v1, t), [0, -1, 0], [0.8, 0.8, 0.8, 1], [0, 0, tw, 0, tw, WALL_T, 0, WALL_T]));
         if (h.v0 > 0.01) col.wall.push(quadGeo(P(h.u0, h.v0, 0), P(h.u1, h.v0, 0), P(h.u1, h.v0, t), P(h.u0, h.v0, t), [0, 1, 0], c, [0, 0, tw, 0, tw, WALL_T, 0, WALL_T]));
         col.wall.push(quadGeo(P(h.u0, h.v0, 0), P(h.u0, h.v1, 0), P(h.u0, h.v1, t), P(h.u0, h.v0, t), w.ud, c, [0, 0, th, 0, th, WALL_T, 0, WALL_T]));
         col.wall.push(quadGeo(P(h.u1, h.v0, 0), P(h.u1, h.v1, 0), P(h.u1, h.v1, t), P(h.u1, h.v0, t), w.ud.map((x) => -x), c, [0, 0, th, 0, th, WALL_T, 0, WALL_T]));
@@ -224,8 +229,11 @@ export function buildRoom(stage, room) {
       addBox(col, 'cornice', w.len, 0.032, 0.003, w.len / 2, H - 0.016, 0.0015, wallFrame(w, 0, 0, 0));
       addBox(col, 'cornice', w.len, 0.003, 0.032, w.len / 2, H - 0.0015, 0.016, wallFrame(w, 0, 0, 0));
       // perfil de canto (montante) — no início de cada parede (os 4 cantos)
-      addBox(col, 'post', 0.07, H - 0.06, 0.004, 0.035, (H - 0.06) / 2 + 0.03, 0.002, wallFrame(w, 0, 0, 0));
-      addBox(col, 'post', 0.003, H - 0.06, 0.012, 0.07, (H - 0.06) / 2 + 0.03, 0.006, wallFrame(w, 0, 0, 0));
+      // montante de canto saliente (perfil 0,09 × 0,03 m) nos dois lados de cada canto
+      for (const uu of [0.045, w.len - 0.045]) {
+        addBox(col, 'post', 0.09, H - 0.035, 0.03, uu, (H - 0.035) / 2, 0.015, wallFrame(w, 0, 0, 0));
+        addBox(col, 'postEdge', 0.004, H - 0.035, 0.032, uu + (uu < 1 ? 0.045 : -0.045), (H - 0.035) / 2, 0.016, wallFrame(w, 0, 0, 0));
+      }
       // topo da parede (visível só de cima)
       addBox(col, 'cap', w.len + 2 * WALL_T, 0.03, WALL_T, w.len / 2, H + 0.015, -WALL_T / 2, wallFrame(w, 0, 0, 0));
       decorate(w, col, { L, W, H, zl, zr, doorC });
