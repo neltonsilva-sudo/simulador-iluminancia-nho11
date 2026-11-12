@@ -13,7 +13,7 @@ import { viewSpec, ease, REF1 } from './scene_views.js';
 // L = ρE/π ≈ 38 cd/m²; K_PHYS leva isso a ~0,6 (branco claro, não estourado, após o tone mapping Neutral).
 // A exposição é FIXA (física): 500 lx parece mais claro que 200 lx, dimerizar escurece. Uma medição de AE no boot só
 // assume se as unidades estiverem fora de escala (> 4× de diferença) — proteção contra tela branca/preta.
-const K_PHYS = 0.016; // calibrado (tone mapping Neutral): sala padrão, Ē≈220 lx → paredes ≈ 200/255 como na foto
+const K_PHYS = 0.019; // calibrado (tone mapping Neutral): sala padrão, Ē≈220 lx → paredes ≈ 200/255 como na foto
 
 // Guarda global (nível do renderer): nenhum material grava NaN/Inf nem passa do limite do HalfFloat (65504) nos alvos
 // HDR — emissores físicos muito intensos (chips de LED a dezenas de milhares de nit) virariam Inf, e um único Inf
@@ -67,7 +67,7 @@ export function createStage(canvas, opts = {}) {
   if (Number.isFinite(qsExp)) expComp = qsExp;
   const qsWb = (qs.get('wb') || '').split(',').map(Number);
   if (qsWb.length === 3 && qsWb.every(Number.isFinite)) post.pre.uniforms.wb.value.set(...qsWb);
-  const AE_KEY = 0.256; // valor-chave (média log de luminância do quadro ref1 → cinza claro de foto noturna de celular)
+  const AE_KEY = 0.30; // valor-chave (média log de luminância do quadro ref1 → cinza claro de foto noturna de celular)
   const meterRT = new THREE.WebGLRenderTarget(128, 52, { type: THREE.FloatType });
   const meterCam = new THREE.PerspectiveCamera();
   function meter() {
@@ -76,7 +76,9 @@ export function createStage(canvas, opts = {}) {
     meterCam.position.copy(s.pos); meterCam.lookAt(s.target); meterCam.updateProjectionMatrix(); meterCam.updateMatrixWorld();
     refl.suspend(true);
     const prev = renderer.getRenderTarget();
+    const prevClip = renderer.clippingPlanes; renderer.clippingPlanes = []; // o corte do teto (vista de cima) não pode entrar na medição
     renderer.setRenderTarget(meterRT); renderer.clear(); renderer.render(scene, meterCam); renderer.setRenderTarget(prev);
+    renderer.clippingPlanes = prevClip;
     refl.suspend(false);
     const buf = new Float32Array(128 * 52 * 4);
     renderer.readRenderTargetPixels(meterRT, 0, 0, 128, 52, buf);

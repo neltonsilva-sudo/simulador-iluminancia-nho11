@@ -43,7 +43,7 @@ export function furnitureTextures(renderer) {
   // --- polipropileno: textura de molde (granulado fino "fosco acetinado") + manchas de uso
   const grain = fbm(S, [[64, 0.55], [128, 0.45]], 7), blot = fbm(S, [[4, 0.6], [8, 0.4]], 21), scr = fbm(S, [[16, 0.5], [32, 0.5]], 33);
   const ppNormal = dataTex(S, normalFromHeight(grain, S, 2.2), { repeat: 3 });
-  const ppRough = dataTex(S, (i) => { const r = 0.40 + grain[i] * 0.10 + Math.max(0, blot[i] - 0.55) * 0.35 + Math.max(0, scr[i] - 0.68) * 0.5; return [0, Math.min(255, r * 255), 0]; }, { repeat: 1 });
+  const ppRough = dataTex(S, (i) => { const r = 0.36 + grain[i] * 0.08 + Math.max(0, blot[i] - 0.55) * 0.2 + Math.max(0, scr[i] - 0.7) * 0.3; return [0, Math.min(255, r * 255), 0]; }, { repeat: 1 });
   const ppColor = dataTex(S, (i) => { const v = 240 + (blot[i] - 0.5) * 12 - Math.max(0, scr[i] - 0.7) * 18; return [v, v, Math.min(255, v + 4)]; }, { srgb: true });
 
   // --- fórmica (laminado melamínico) bege-acinzentado: salpicado fino + leve "nuvem"
@@ -61,7 +61,7 @@ export function furnitureTextures(renderer) {
   const orange = fbm(mS, [[32, 0.6], [64, 0.4]], 71);
   for (let y = 0; y < mS; y++) for (let x = 0; x < mS; x++) st[y * mS + x] = rowv[y] * 0.35 + orange[y * mS + x] * 0.65;
   const mtNormal = dataTex(mS, normalFromHeight(orange, mS, 1.6));
-  const mtRough = dataTex(mS, (i) => [0, (0.30 + st[i] * 0.16) * 255, 0]);
+  const mtRough = dataTex(mS, (i) => [0, (0.42 + st[i] * 0.06) * 255, 0]);
 
   // --- tecido (estofado): trama em sarja
   const tS = 256, tw = new Float32Array(tS * tS), tn = fbm(tS, [[64, 0.5], [128, 0.5]], 81);
@@ -76,17 +76,17 @@ export function furnitureTextures(renderer) {
   const toPx = (a, b) => [(a - BACK_BOX.minA) / (BACK_BOX.maxA - BACK_BOX.minA) * HW, (1 - (b - BACK_BOX.minB) / (BACK_BOX.maxB - BACK_BOX.minB)) * HH];
   const pxPerM = HW / (BACK_BOX.maxA - BACK_BOX.minA);
   const holes = [];
-  // como na foto: 5 fileiras esparsas, alternadas, na faixa média/alta do encosto; sem alça
-  const rows = 5, sy = 0.039, y0 = -0.058;
+  // como na foto: 4 fileiras esparsas e intercaladas (9/8), só na metade superior do encosto; sem alça
+  const rows = 4, sy = 0.04, y0 = -0.005;
   for (let r = 0; r < rows; r++) {
-    const b = y0 + r * sy, cols = r % 2 ? 9 : 10, sx = 0.0385, off = -(cols - 1) / 2 * sx;
+    const b = y0 + r * sy, cols = r % 2 ? 8 : 9, sx = 0.044, off = -(cols - 1) / 2 * sx;
     for (let c = 0; c < cols; c++) {
       const a = off + c * sx;
-      const ea = Math.abs(a) / 0.198, eb = Math.abs(b - 0.02) / 0.11; if (ea ** 4 + eb ** 4 > 1) continue;
+      if (Math.abs(a) > 0.19 - Math.max(0, b - 0.09) * 0.6) continue;
       holes.push([a, b]);
     }
   }
-  const hr = 0.0052 * pxPerM;
+  const hr = 0.0055 * pxPerM;
   for (const [a, b] of holes) { const [x, y] = toPx(a, b); g.beginPath(); g.arc(x, y, hr, 0, Math.PI * 2); g.fill(); }
   const holeTex = new THREE.CanvasTexture(hc); holeTex.flipY = true; holeTex.anisotropy = aniso; holeTex.generateMipmaps = true;
   holeTex.minFilter = THREE.LinearMipmapLinearFilter; holeTex.wrapS = holeTex.wrapT = THREE.ClampToEdgeWrapping;
@@ -107,6 +107,6 @@ export function furnitureTextures(renderer) {
   const deskAo = new THREE.CanvasTexture(dc);
   cache.ao = { aoTex, deskAo, AW, AH };
   for (const t of [ppNormal, ppRough, ppColor, fmColor, fmRough, fmNormal, mtNormal, mtRough, fbNormal, fbColor]) t.anisotropy = aniso;
-  cache.t = { ppNormal, ppRough, ppColor, fmColor, fmRough, fmNormal, mtNormal, mtRough, fbNormal, fbColor, holeTex, ...cache.ao };
+  cache.t = { holeUv: 0.011 / (BACK_BOX.maxA - BACK_BOX.minA), ppNormal, ppRough, ppColor, fmColor, fmRough, fmNormal, mtNormal, mtRough, fbNormal, fbColor, holeTex, ...cache.ao };
   return cache.t;
 }

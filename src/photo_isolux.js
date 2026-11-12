@@ -99,7 +99,7 @@ export function buildIsolux(stage) {
     const img = new ImageData(rgba.data || rgba, cw, ch);
     ctx.putImageData(img, 0, 0);
     // véu translúcido: alfa aplicado pelo canvas para que linhas fiquem opacas
-    ctx.globalCompositeOperation = 'destination-in'; ctx.fillStyle = `rgba(0,0,0,${lit ? 0.74 : 0.35})`; ctx.fillRect(0, 0, cw, ch);
+    ctx.globalCompositeOperation = 'destination-in'; ctx.fillStyle = `rgba(0,0,0,${lit ? 0.86 : 0.35})`; ctx.fillRect(0, 0, cw, ch);
     ctx.globalCompositeOperation = 'source-over';
     const sx = cw / g.nx, sz = ch / g.nz, toPx = (p) => [(p[0] + 0.5) * sx, (p[1] + 0.5) * sz];
     const levels = lit ? isoLevels(g.Emin, g.Emax, niceRange(g.Emin, g.Emax)) : []; // linhas: passo fino dos dados; cores: escala ancorada
@@ -123,8 +123,12 @@ export function buildIsolux(stage) {
       const panel = curSpec?.dist === 'panel' || curSpec?.kind === 'panel';
       const a = l.axis === 'z', len = panel ? (curSpec.lenM || 0.62) : l.len, wid = panel ? (curSpec.widM || 0.62) : Math.max(l.wid || 0.09, 0.07);
       const w = (a ? wid : len) * m, h = (a ? len : wid) * m, x = (l.x + room.W / 2) * m - w / 2, y = (l.z + room.L / 2) * m - h / 2;
+      const f = Math.min(1, Math.max(0, +(curSpec?.lumFactors?.[l.id] ?? 1) || 0)); // depreciada (cinza) / queimada (×)
       ctx.beginPath(); ctx.roundRect(x, y, w, h, Math.min(w, h) * 0.3);
-      ctx.fillStyle = 'rgba(255,255,255,0.92)'; ctx.fill(); ctx.lineWidth = 0.018 * m; ctx.strokeStyle = 'rgba(12,16,24,0.75)'; ctx.stroke();
+      ctx.fillStyle = f >= 0.999 ? 'rgba(255,255,255,0.92)' : `rgba(${Math.round(60 + 195 * f)},${Math.round(60 + 195 * f)},${Math.round(64 + 191 * f)},0.92)`;
+      ctx.fill(); ctx.lineWidth = 0.018 * m; ctx.strokeStyle = f < 0.999 ? 'rgba(255,93,108,0.95)' : 'rgba(12,16,24,0.75)'; ctx.stroke();
+      if (f < 0.02) { const cx = x + w / 2, cy = y + h / 2, r = 0.16 * m; ctx.strokeStyle = '#ff5d6c'; ctx.lineWidth = 0.035 * m; ctx.lineCap = 'round';
+        ctx.beginPath(); ctx.moveTo(cx - r, cy - r); ctx.lineTo(cx + r, cy + r); ctx.moveTo(cx + r, cy - r); ctx.lineTo(cx - r, cy + r); ctx.stroke(); }
     }
     tex.needsUpdate = true;
     plane.scale.set(room.W, room.L, 1); plane.position.set(0, room.plane + 0.012, 0);
@@ -170,6 +174,13 @@ export function buildIsolux(stage) {
       if (shown) for (const p of globalThis.__sim?.points?.() || []) { const hw = vals[p.id] != null && vals[p.id] !== '' ? 78 : 26;
         for (const yy of [room.plane, room.H]) { _v.set(p.x, yy, p.z).project(cam); if (_v.z <= 1 && _v.z >= -1) marks.push([(_v.x + 1) / 2 * vw, (1 - _v.y) / 2 * vh, hw]); } } } catch { /* sem app */ }
     const rects = []; let total = 0;
+    // contorno da sala projetado (convexo): o rótulo deve caber dentro do plano de trabalho
+    const quad = [[-W2(), -L2()], [W2(), -L2()], [W2(), L2()], [-W2(), L2()]].map(([qx, qz]) => proj(qx, qz));
+    const inside = (px, py, tol) => { if (quad.some((q) => !q)) return true; let sgn = 0;
+      for (let k = 0; k < 4; k++) { const [ax, ay] = quad[k], [bx, by] = quad[(k + 1) % 4], ex = bx - ax, ey = by - ay, len = Math.hypot(ex, ey) || 1;
+        const d = (ex * (py - ay) - ey * (px - ax)) / len; if (!sgn) sgn = Math.sign(d) || 1; if (d * sgn < -tol) return false; }
+      return true; };
+    const rectInside = (r, tol) => inside(r[0], r[1], tol) && inside(r[2], r[1], tol) && inside(r[0], r[3], tol) && inside(r[2], r[3], tol);
     // obstáculos de tela: legenda e painéis da UI (coordenadas relativas ao canvas)
     const blocks = []; try { const cr = el.getBoundingClientRect();
       const add = (e) => { if (!e || getComputedStyle(e).display === 'none') return; const b = e.getBoundingClientRect(); if (b.width && b.height) blocks.push([b.left - cr.left, b.top - cr.top, b.right - cr.left, b.bottom - cr.top]); };
@@ -185,13 +196,16 @@ export function buildIsolux(stage) {
         const want = c.len > 7 ? 2 : 1;
         for (let n = 0; n < want && count < (chains[0].len > 7 ? 2 : 1) && total < 10; n++) {
           let best = null, bestS = -Infinity;
-          for (let k = 0; k < c.w.length; k += 2) {
-            const [x, z] = c.w[k], wall = Math.min(W2() - Math.abs(x), L2() - Math.abs(z)); if (wall < (Ln.kind === '70' ? 0.2 : 0.5)) continue;
+          // a linha de 70 % Ē costuma ser um arco curto no canto: se o rótulo não couber sobre ela, desloca para dentro
+          const cand = []; for (let k = 0; k < c.w.length; k += 2) cand.push(c.w[k]);
+          if (Ln.kind === '70') for (const sh of [0.35, 0.6, 0.9]) for (let k = 0; k < c.w.length; k += 3) { const [px, pz] = c.w[k], d = Math.hypot(px, pz) || 1; cand.push([px - px / d * sh, pz - pz / d * sh, sh]); }
+          for (const cw of cand) {
+            const [x, z] = cw, wall = Math.min(W2() - Math.abs(x), L2() - Math.abs(z)); if (wall < (Ln.kind === '70' ? 0.2 : 0.5)) continue;
             const q = proj(x, z); if (!q) continue;
             const r = [q[0] - wpx / 2, q[1] - hpx / 2, q[0] + wpx / 2, q[1] + hpx / 2];
-            if (r[0] < 6 || r[1] < 6 || r[2] > vw - 6 || r[3] > vh - 6 || hit(r)) continue;
+            if (r[0] < 6 || r[1] < 6 || r[2] > vw - 6 || r[3] > vh - 6 || hit(r) || !rectInside(r, Ln.kind === '70' ? 10 : -2)) continue;
             let dl = 400; for (const o of rects) dl = Math.min(dl, Math.hypot((o[0] + o[2]) / 2 - q[0], (o[1] + o[3]) / 2 - q[1]));
-            const s = Math.min(dl, 260) + 40 * Math.min(wall, 1.5);
+            const s = Math.min(dl, 260) + 40 * Math.min(wall, 1.5) - 200 * (cw[2] || 0);
             if (s > bestS) { bestS = s; best = { x, z, r }; }
           }
           if (!best) break;

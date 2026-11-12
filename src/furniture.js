@@ -13,22 +13,31 @@ function makeMaterials(renderer) {
   const T = furnitureTextures(renderer);
   // polipropileno azul royal injetado (acetinado, leve brilho especular)
   const pp = new THREE.MeshPhysicalMaterial({
-    color: new THREE.Color('#1a3cba'), map: T.ppColor, roughness: 1, roughnessMap: T.ppRough, normalMap: T.ppNormal, normalScale: new THREE.Vector2(0.18, 0.18),
-    metalness: 0, specularIntensity: 0.55, ior: 1.49, sheen: 0.12, sheenRoughness: 0.6, sheenColor: new THREE.Color('#6f8cff'),
+    color: new THREE.Color('#2050d0'), map: T.ppColor, roughness: 1, roughnessMap: T.ppRough, normalMap: T.ppNormal, normalScale: new THREE.Vector2(0.15, 0.15),
+    metalness: 0, specularIntensity: 0.6, ior: 1.49, clearcoat: 0.2, clearcoatRoughness: 0.5,
   });
   const ppBack = pp.clone(); ppBack.alphaMap = T.holeTex; ppBack.alphaTest = 0.5; ppBack.side = THREE.FrontSide;
-  // aço tubular com pintura epóxi cinza-prata (metálico, anisotrópico ao longo do tubo)
+  // furos: quando o furo cobre < ~3 px na tela ele se funde à casca (evita o "chuvisco" serrilhado sem MSAA)
+  ppBack.onBeforeCompile = (sh) => {
+    sh.fragmentShader = sh.fragmentShader.replace('#include <alphamap_fragment>', `#ifdef USE_ALPHAMAP
+      float holeA = texture2D( alphaMap, vAlphaMapUv ).g;
+      float holePx = ${T.holeUv.toFixed(4)} / max( length( fwidth( vAlphaMapUv ) ), 1e-6 );
+      diffuseColor.a *= mix( 1.0, holeA, smoothstep( 2.2, 4.0, holePx ) );
+    #endif`);
+  };
+  ppBack.customProgramCacheKey = () => 'ppBackHoleFade';
+  // aço tubular com pintura epóxi cinza-prata acetinada (foto: cinza-prata claro)
   const steel = new THREE.MeshPhysicalMaterial({
-    color: new THREE.Color('#b0b4b8'), metalness: 0.05, roughness: 1, roughnessMap: T.mtRough, normalMap: T.mtNormal, normalScale: new THREE.Vector2(0.12, 0.12),
+    color: new THREE.Color('#c4c8cc'), metalness: 0.3, roughness: 1, roughnessMap: T.mtRough, normalMap: T.mtNormal, normalScale: new THREE.Vector2(0.04, 0.04),
     clearcoat: 0.1, clearcoatRoughness: 0.4, // anisotropia testada (0,3–0,55) escurecia os tubos nas vistas laterais — estrias via roughnessMap
   });
-  steel.envMapIntensity = steel.userData.envI = 2.4; // estrutura vertical recebe pouca luz direta (luminárias acima)
+  steel.envMapIntensity = steel.userData.envI = 2.0; // estrutura vertical recebe pouca luz direta (luminárias acima)
   const capMat = new THREE.MeshStandardMaterial({ color: new THREE.Color('#2b2d30'), roughness: 0.62, metalness: 0 });
   // prancheta: laminado melamínico bege-acinzentado + fita de borda PVC
   const formica = new THREE.MeshPhysicalMaterial({ color: 0xffffff, map: T.fmColor, roughness: 1, roughnessMap: T.fmRough, normalMap: T.fmNormal, normalScale: new THREE.Vector2(0.08, 0.08), specularIntensity: 0.6, clearcoat: 0.12, clearcoatRoughness: 0.4 });
   const edge = new THREE.MeshStandardMaterial({ color: new THREE.Color('#7a6650'), roughness: 0.5, metalness: 0 });
-  // estofado: tecido poliéster azul-marinho
-  const fabric = new THREE.MeshPhysicalMaterial({ color: new THREE.Color('#1f3c9e'), map: T.fbColor, normalMap: T.fbNormal, normalScale: new THREE.Vector2(0.45, 0.45), roughness: 0.95, sheen: 0.5, sheenRoughness: 0.6, sheenColor: new THREE.Color('#3f5fd0') });
+  // estofado: tecido poliéster azul-marinho (foto: nitidamente mais escuro que o PP)
+  const fabric = new THREE.MeshPhysicalMaterial({ color: new THREE.Color('#1b2c66'), map: T.fbColor, normalMap: T.fbNormal, normalScale: new THREE.Vector2(0.45, 0.45), roughness: 0.95, sheen: 0.3, sheenRoughness: 0.7, sheenColor: new THREE.Color('#34488a') });
   const fabricDark = fabric.clone(); fabricDark.color = new THREE.Color('#2a2c31'); fabricDark.sheenColor = new THREE.Color('#6a6d74');
   const blackSteel = new THREE.MeshPhysicalMaterial({ color: new THREE.Color('#26282b'), metalness: 0.3, roughness: 0.45, clearcoat: 0.3, clearcoatRoughness: 0.3 });
   const mdfPanel = new THREE.MeshStandardMaterial({ color: new THREE.Color('#b9b3a6'), roughness: 0.6 });
@@ -96,6 +105,8 @@ export function buildFurniture(stage, room) {
     tablet: inst(tablet, [M.formica, M.edge], 'chair-tablet'),
   };
 
+  // tubos finos fora do G-buffer do GTAO do RENDER (a AO em tela os deixava quase pretos; o contato vem do decal abaixo)
+  parts.frame.userData.noAO = parts.caps.userData.noAO = true;
   // oclusão de contato no piso (decal escurecedor sob cada carteira — os pés "assentam" no porcelanato)
   const T = furnitureTextures(stage.renderer);
   const aoMat = new THREE.MeshBasicMaterial({ color: 0x000000, alphaMap: T.aoTex, transparent: true, opacity: 0.62, depthWrite: false, polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -2 });
@@ -107,7 +118,7 @@ export function buildFurniture(stage, room) {
   const prof = new THREE.Group(); prof.name = 'teacher'; group.add(prof);
   const mk = (g, m) => { const o = new THREE.Mesh(g, m); o.castShadow = o.receiveShadow = true; prof.add(o); return o; };
   const deskG = new THREE.Group(); prof.add(deskG);
-  deskG.add(mk(desk.top, [M.formica, M.edge]), mk(desk.frame, M.steel), mk(desk.panel, M.mdfPanel));
+  deskG.add(mk(desk.top, [M.formica, M.edge]), mk(desk.frame, M.steel), mk(desk.panel, M.mdfPanel)); deskG.children[1].userData.noAO = true;
   const chairG = new THREE.Group(); prof.add(chairG);
   chairG.add(mk(tch.seat, M.fabricDark), mk(tch.back, M.fabricDark), mk(tch.frame, M.blackSteel));
   { const dg = new THREE.PlaneGeometry(1.3, 0.65); dg.rotateX(-Math.PI / 2); dg.translate(0, 0.0015, 0); const dm = aoMat.clone(); dm.alphaMap = T.deskAo; const d = new THREE.Mesh(dg, dm); d.renderOrder = 1; deskG.add(d); chairG.add(new THREE.Mesh(aoGeo, aoMat)); }

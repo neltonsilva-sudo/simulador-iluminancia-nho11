@@ -29,7 +29,6 @@ const fmtM = (v) => (+v).toLocaleString('pt-BR', { minimumFractionDigits: 2, max
 const STICKER_R = 0.105, DISC_R = 0.15, Y_STICK = 0.009, Y_GUIDE = 0.011;
 
 export function buildMarkers(stage) {
-  if (new URLSearchParams(location.search).get('nomark') === '1') return { group: new THREE.Group(), show() {}, hide() {}, setValues() {}, highlight() {}, luxmeterTo() {}, onPick() {} }; // diagnóstico
   const { renderer } = stage; setAniso(renderer);
   const canvas = stage.canvas || renderer.domElement;
   const group = new THREE.Group(); group.name = 'markers'; stage.scene.add(group);

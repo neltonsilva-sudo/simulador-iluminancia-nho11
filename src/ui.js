@@ -605,6 +605,11 @@ export function createUI(root, app) {
     e.preventDefault(); app.recordReading(lxId);
   });
   if (S.activePoint) lxShow(S.activePoint);
+  // ex=anexo4 pela URL: aplica também as leituras da área da tarefa (Tabela A2), como no exemplo da norma
+  if (qs.get('ex') === 'anexo4') setTimeout(() => {
+    const t = app.QUADRO1.find((x) => /reuni/i.test(x.nome)); if (t) { app.set({ envId: t.id }); env.set(t.id); }
+    if (!S.task?.length) app.set({ task: [550, 600, 620, 550, 650, 700] });
+  }, 0);
   // vista atual também pode mudar por fora (setView direto)
   const _sv = app.setView; app.setView = (v, o) => { _sv(v, o); updDock(); };
 

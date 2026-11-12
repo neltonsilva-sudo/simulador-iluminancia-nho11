@@ -454,7 +454,7 @@ select.inp { appearance: none; padding-right: 30px; background-image: url("data:
   .dk span { display: none; }
   .reopen { display: none !important; }
   .lxcard { left: 50% !important; bottom: calc(var(--sheet-h, 50vh) + 58px); width: calc(100vw - 20px); gap: 9px; transition: bottom 0.38s cubic-bezier(0.2, 0.85, 0.25, 1); }
-  .lx-m { min-width: 0; flex: 1; } .lx-s, .lx-rec kbd { display: none; } .lx-rec span { font-size: 12px; } .lx-val { font-size: 20px; }
+  .lx-m { min-width: 0; flex: 1; } .lx-s, .lx-rec kbd, .lx-g { display: none; } .lx-rec span { font-size: 12px; } .lx-val { font-size: 20px; }
   .rfields { grid-template-columns: 1fr; }
   .nho-ui .inp, .nho-ui .fld input, .nho-ui .cbx-in, .nho-ui .stp-c input, .rl-f .inp { font-size: 16px; }
   .nho-panel[data-sheet="full"] ~ .dock, .nho-panel[data-sheet="full"] ~ .lxcard, .nho-panel[data-sheet="full"] ~ .hud { opacity: 0; pointer-events: none; }

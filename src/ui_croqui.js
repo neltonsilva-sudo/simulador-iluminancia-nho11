@@ -105,7 +105,7 @@ export function croquiSVG(o) {
     if (o.labels !== false) {
       const tw = Math.max(p.label.length * 16, has && o.values !== false ? fmt(+val, 1).length * 11.5 : 0) + 4, th = has && o.values !== false ? 50 : 28;
       const prefRight = rot ? (v > mT + RH * 0.15) : (u < mL + RW - 70);
-      const cands = []; for (const by of [v - 5, v - 32, v + 26]) for (const r of prefRight ? [true, false] : [false, true]) cands.push([r, by]);
+      const cands = []; for (const by of [v - 5, v - 46, v + 38]) for (const r of prefRight ? [true, false] : [false, true]) cands.push([r, by]);
       const box = (r, by) => ({ x: r ? u + 13 : u - 13 - tw, y: by - 21, w: tw, h: th });
       const hit = (a) => obst.some((b) => a.x < b.x + b.w && a.x + a.w > b.x && a.y < b.y + b.h && a.y + a.h > b.y) || a.x < mL - 2 || a.x + a.w > mL + RW + 2 || a.y < mT - 2 || a.y + a.h > mT + RH + 2;
       const [right, by] = cands.find(([r, y]) => !hit(box(r, y))) || cands[0]; obst.push(box(right, by));

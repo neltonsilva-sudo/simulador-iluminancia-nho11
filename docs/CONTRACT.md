@@ -40,7 +40,18 @@ verdict:'atende'|'nao-atende'|'incompleto', bands{E15,lim70,lim70_15,minReq}, ar
   pontos 182–248 lux, Ē(NHO) ≈ 210 lux (planilha real 203,7), Ē(NHO) = média real da grade ±0,5 %.
 - `REFLECT` {ceiling .80, walls .70, floor .30} e `MF` (.80): altere com `setReflectances({...})` / `setMF(v)` (invalidam o
   cache). `spec.mf` sobrepõe MF por chamada. `OPENINGS` (4 janelas esq., 3 janelas + porta dir., ρ 0,10/0,50) via `setOpenings([])`.
-- Teto luminoso (config 6): fluxo total = `spec.count` × flux (se ausente: `__sim.state.N×M`, senão 8).
+- Teto luminoso (config 6): fluxo total = `spec.count` × flux (se ausente: `__sim.state.N×M`, senão 8). O worker recebe o spec inteiro (count incluso).
+- **Luz natural** `spec.daylight` (0..1, padrão 0 = noite, condição mais desfavorável exigida pela NHO-11): janelas de `OPENINGS` viram fontes
+  difusas na radiosidade com exitância = daylight · `spec.daylightLux` (padrão `DAYLIGHT.extLux` = 10 000 lx, dia nublado) · 0,40 (E_vert/E_hor,
+  céu encoberto CIE) · 0,62 (vidro × caixilho/grade). Sala padrão, daylight 1, luminárias desligadas: ≈450–490 lux junto às janelas, 242 lux no
+  centro (FLD ≈ 2,4 %). Superpõe-se linearmente às luminárias; funciona com `on:false`. Em `illuminanceParts` a luz natural entra em `indirect`.
+- **Fator por luminária** `spec.lumFactors = { 'L1.1': 0, 'L2.3': 0.55, … }` (ids de `layoutLuminaires`; 0 = queimada, <1 = depreciada,
+  limite 0..2): multiplica a intensidade daquela luminária (direta + radiosidade). O isolux desenha a luminária queimada com ×, a depreciada em cinza.
+- `primeGeometry(room, data)` / `geometryData(room)` / `hasGeometry(room)`: fatores de forma (reciprocidade, ≤120 ms) pré-calculados no worker
+  a cada `isolux.update` com sala nova. Obs.: LUMINÁRIAS chama `solve()` sincronamente no próprio update (antes do isolux), então a 1ª sala nova
+  ainda custa ≈ 70–120 ms (geometria) + ≈ 40 ms (solução) na thread principal.
+- Isolux: escala de cores ANCORADA em 0 … ≥ max(Emáx, `__sim.state.Emin`) (Quadro 1); recolore ao trocar o ambiente (`app.on('change')`).
+  Legenda “Simulação (luxímetro virtual)” com marcas de Ē, 70 % Ē e Quadro 1, colchete Emín–Emáx e “exigido”.
 - `intensityCurve(spec)` → `{gamma[], C0[], C90[]}` em cd/klm (para gráfico polar). `diagnostics(lums,room,spec)` → balanço de fluxo,
   nº de patches, fechamento ΣF, iterações.
 - `buildIsolux(stage)` → `{group, legend (canvas DOM .photo-isolux-legend), update, setVisible, stats() → {Emin,Emax,Emed,U0,nx,nz},

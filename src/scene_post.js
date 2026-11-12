@@ -18,7 +18,7 @@ const VS = /* glsl */`varying vec2 vUv; void main(){ vUv = uv; gl_Position = pro
 const PreShader = {
   uniforms: {
     tDiffuse: { value: null }, tAO: { value: null }, aoOn: { value: 0 }, aoIntensity: { value: 0.85 },
-    exposure: { value: 1 }, wb: { value: new THREE.Vector3(1.03, 1.0, 0.95) }, clampMax: { value: 48 },
+    exposure: { value: 1 }, wb: { value: new THREE.Vector3(0.955, 1.0, 0.945) }, clampMax: { value: 48 },
   },
   vertexShader: VS,
   fragmentShader: /* glsl */`
@@ -108,7 +108,7 @@ export function createPost(renderer, scene, camera, quality) {
   if (gtao) { pre.uniforms.tAO.value = gtao.gtaoMap; pre.uniforms.aoOn.value = 1; }
   composer.addPass(pre);
 
-  const bloom = new UnrealBloomPass(new THREE.Vector2(size.x / 2, size.y / 2), hi ? 0.11 : 0.08, 0.55, 2.2);
+  const bloom = new UnrealBloomPass(new THREE.Vector2(size.x / 2, size.y / 2), hi ? 0.16 : 0.1, 0.5, 2.0);
   composer.addPass(bloom);
 
   const extraIndex = composer.passes.length; // passes extras HDR entram aqui

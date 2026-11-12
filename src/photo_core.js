@@ -259,7 +259,7 @@ export function solve(lums, room, spec) {
       else rho[i] = p.surf === 'ceiling' ? (luminous ? LUMINOUS_CEILING_RHO : REFLECT.ceiling) : REFLECT.floor;
       if (EL.n) { // irradiância direta média no patch (subamostragem 3×3; 6×6 perto das luminárias)
         const near = p.surf === 'ceiling' || (p.hi[1] > room.H - 0.6 && p.surf === 'wall');
-        const m = near ? 6 : 3; let e = 0;
+        const m = near ? 4 : 2; let e = 0;
         for (let a = 0; a < m; a++) for (let b = 0; b < m; b++) {
           const q = [p.c[0], p.c[1], p.c[2]];
           q[p.uA] = p.lo[p.uA] + (p.hi[p.uA] - p.lo[p.uA]) * (a + 0.5) / m; q[p.vA] = p.lo[p.vA] + (p.hi[p.vA] - p.lo[p.vA]) * (b + 0.5) / m;

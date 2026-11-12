@@ -165,7 +165,7 @@ export function chairSeatShell() {
 }
 
 // encosto: (a = x, b = vertical local); h positivo = para trás (+Z local)
-function backSurf(a, b) { return -(a * a) / 0.86 - 0.0075 * Math.exp(-(((b + 0.06) / 0.09) ** 2)) + 0.03 * Math.max(0, b - 0.06) ** 2; }
+function backSurf(a, b) { return -(a * a) / 0.7 - 0.0075 * Math.exp(-(((b + 0.06) / 0.09) ** 2)) + 0.03 * Math.max(0, b - 0.06) ** 2; }
 const backQ = new THREE.Quaternion().setFromAxisAngle(new V3(1, 0, 0), CH.backTilt);
 export function backToWorld(a, b, h) { const v = new V3(a, b, h).applyQuaternion(backQ); return [v.x, v.y + CH.backY, v.z + CH.backZ]; }
 export const BACK_OUTLINE = () => roundedPolygon([[-0.208, -0.162], [0.208, -0.162], [0.228, 0.152], [0, 0.171], [-0.228, 0.152]], [0.045, 0.045, 0.07, 0, 0.07], 6, 0.035);
@@ -260,7 +260,7 @@ function roundedPolyConcave(pts, radii, seg) {
 // variante estofada (assento e encosto com espuma + tecido)
 export function cushionSeat() {
   const outline = roundedPolygon([[-0.234, -0.218], [0.234, -0.218], [0.215, 0.208], [-0.215, 0.208]], [0.07, 0.07, 0.09, 0.09], 6, 0.04);
-  const T = 0.042, prof = [{ s: 0, h: T }];
+  const T = 0.058, prof = [{ s: 0, h: T }];
   for (const s of [0.35, 0.6, 0.8, 0.92, 1]) prof.push({ s, d: 0.03, h: T });
   for (let k = 1; k <= 7; k++) { const a = k / 7 * Math.PI / 2; prof.push({ s: 1, d: 0.03 * (1 - Math.sin(a)), h: T - 0.022 * (1 - Math.cos(a)) }); }
   prof.push({ s: 1, d: 0, h: 0.012 }, { s: 1, d: 0.004, h: 0.002 }, { s: 1, d: 0.012, h: 0 }, { s: 0.8, d: 0.012, h: 0 }, { s: 0, h: 0 });
@@ -268,7 +268,7 @@ export function cushionSeat() {
 }
 export function cushionBack() {
   const outline = roundedPolygon([[-0.205, -0.15], [0.205, -0.15], [0.215, 0.135], [-0.215, 0.135]], [0.1, 0.1, 0.12, 0.12], 7, 0.04);
-  const T = 0.045, prof = [{ s: 0, h: -T * 0.65 }];
+  const T = 0.062, prof = [{ s: 0, h: -T * 0.65 }];
   for (const s of [0.35, 0.6, 0.8, 0.92, 1]) prof.push({ s, d: 0.032, h: -T * 0.65 * (1 - 0.15 * s * s) });
   for (let k = 1; k <= 8; k++) { const a = k / 8 * Math.PI; prof.push({ s: 1, d: 0.032 * (1 - Math.sin(Math.min(a, Math.PI / 2))) + (a > Math.PI / 2 ? 0.02 * Math.sin(a - Math.PI / 2) : 0), h: -T * 0.55 + T * 0.75 * (1 - Math.cos(a)) / 2 }); }
   for (const s of [1, 0.85, 0.5]) prof.push({ s, d: 0.03, h: T * 0.25 });

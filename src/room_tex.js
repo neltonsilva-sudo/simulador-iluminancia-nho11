@@ -255,8 +255,8 @@ export function posterTexture(variant = 0) {
 function textRow(g, rnd, x, y, wmax, hh, gap) { let xx = x; while (xx < x + wmax - 6) { const ww = Math.min(x + wmax - xx, hh * (1.2 + rnd() * 4.5)); g.fillRect(xx, y, ww, hh); xx += ww + gap; } }
 function photo(g, rnd, x, y, pw, ph) {
   g.save(); g.beginPath(); g.rect(x, y, pw, ph); g.clip();
-  const gr = g.createLinearGradient(x, y, x + pw * 0.3, y + ph); const hue = 38 + rnd() * 14;
-  gr.addColorStop(0, `hsl(${hue},${55 + rnd() * 25}%,${70 + rnd() * 12}%)`); gr.addColorStop(1, `hsl(${hue - 8},${45 + rnd() * 25}%,${42 + rnd() * 15}%)`);
+  const gr = g.createLinearGradient(x, y, x + pw * 0.3, y + ph); const hue = 46 + rnd() * 10;
+  gr.addColorStop(0, `hsl(${hue},${45 + rnd() * 20}%,${78 + rnd() * 10}%)`); gr.addColorStop(1, `hsl(${hue - 6},${40 + rnd() * 20}%,${55 + rnd() * 12}%)`);
   g.fillStyle = gr; g.fillRect(x, y, pw, ph);
   g.filter = 'blur(3px)';
   // fundo: blocos de "equipamento"
