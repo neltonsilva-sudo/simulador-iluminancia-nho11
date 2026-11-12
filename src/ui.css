@@ -577,3 +577,64 @@ select.inp { appearance: none; padding-right: 30px; background-image: url("data:
 .lg-row label { white-space: nowrap; } .lg-row input { flex: 1; accent-color: #f0a400; min-width: 60px; }
 .lg-sum .ico { width: 14px; height: 14px; }
 @media (max-width: 760px) { .hud-cond span { font-size: 10.5px; } .cond-h .sh small { display: none; } }
+
+/* ================= LIQUID GLASS (painel, HUD, barra de vistas, cartões) ================= */
+:root { --lg-tint: rgba(255, 255, 255, 0.38); --lg-tint2: rgba(255, 255, 255, 0.16); --lg-rim: rgba(255, 255, 255, 0.75);
+  --lg-rim2: rgba(255, 255, 255, 0.18); --lg-shade: rgba(20, 30, 50, 0.22); --lg-txt-shadow: 0 1px 1px rgba(255, 255, 255, 0.55);
+  --lg-card: rgba(255, 255, 255, 0.52); --lg-card-edge: rgba(255, 255, 255, 0.7); }
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) { --lg-tint: rgba(28, 32, 40, 0.46); --lg-tint2: rgba(28, 32, 40, 0.22);
+  --lg-rim: rgba(255, 255, 255, 0.28); --lg-rim2: rgba(255, 255, 255, 0.06); --lg-shade: rgba(0, 0, 0, 0.45);
+  --lg-txt-shadow: 0 1px 2px rgba(0, 0, 0, 0.6); --lg-card: rgba(40, 45, 55, 0.55); --lg-card-edge: rgba(255, 255, 255, 0.14); } }
+:root[data-theme="dark"] { --lg-tint: rgba(28, 32, 40, 0.46); --lg-tint2: rgba(28, 32, 40, 0.22); --lg-rim: rgba(255, 255, 255, 0.28);
+  --lg-rim2: rgba(255, 255, 255, 0.06); --lg-shade: rgba(0, 0, 0, 0.45); --lg-txt-shadow: 0 1px 2px rgba(0, 0, 0, 0.6);
+  --lg-card: rgba(40, 45, 55, 0.55); --lg-card-edge: rgba(255, 255, 255, 0.14); }
+
+.nho-panel, .hud, .dock, .lxcard, .reopen {
+  background: linear-gradient(155deg, var(--lg-tint) 0%, var(--lg-tint2) 55%, var(--lg-tint) 100%) !important;
+  -webkit-backdrop-filter: blur(28px) saturate(1.9) brightness(1.04) !important; backdrop-filter: blur(28px) saturate(1.9) brightness(1.04) !important;
+  border: 1px solid var(--lg-rim2) !important;
+  box-shadow: inset 0 1px 0 var(--lg-rim), inset 0 -1px 0 var(--lg-rim2), inset 1px 0 0 var(--lg-rim2),
+    inset 0 0 22px -6px rgba(255, 255, 255, 0.35), 0 18px 40px -16px var(--lg-shade), 0 2px 6px -2px var(--lg-shade) !important;
+  text-shadow: var(--lg-txt-shadow);
+}
+/* reflexo especular no topo do vidro */
+.nho-panel::before, .hud::before, .dock::before, .lxcard::before {
+  content: ""; position: absolute; inset: 0; border-radius: inherit; pointer-events: none; z-index: 0;
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.28) 0%, rgba(255, 255, 255, 0.06) 22%, transparent 45%),
+    radial-gradient(120% 60% at 15% 0%, rgba(255, 255, 255, 0.22), transparent 60%);
+  mix-blend-mode: soft-light;
+}
+.nho-panel > *, .hud > *, .dock > *, .lxcard > * { position: relative; z-index: 1; }
+/* cartões internos e campos: vidro mais denso para leitura */
+.nho-panel .card, .nho-panel .grp, .nho-panel .fld, .nho-panel input, .nho-panel select, .nho-panel .seg, .nho-panel .btn:not(.primary),
+.dock-seg .dk[aria-pressed="true"] {
+  background: var(--lg-card) !important; border-color: var(--lg-card-edge) !important;
+  -webkit-backdrop-filter: blur(10px) saturate(1.4); backdrop-filter: blur(10px) saturate(1.4);
+}
+/* textos sempre legíveis sobre o vidro */
+.nho-panel, .hud, .dock, .lxcard { color: var(--ui-fg) !important; }
+.hud-k, .hud-u, .hud-sub, .nho-panel small, .nho-panel .muted { color: var(--ui-fg2, var(--ui-fg)) !important; opacity: 0.9; }
+.hud-rep, .nho-panel .primary { text-shadow: none; }
+/* legibilidade sobre o vidro: tom mais denso e textos secundários com contraste AA */
+:root { --lg-tint: rgba(255, 255, 255, 0.58); --lg-tint2: rgba(255, 255, 255, 0.36); --lg-txt-shadow: none; }
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) { --lg-tint: rgba(24, 28, 36, 0.66); --lg-tint2: rgba(24, 28, 36, 0.48); } }
+:root[data-theme="dark"] { --lg-tint: rgba(24, 28, 36, 0.66); --lg-tint2: rgba(24, 28, 36, 0.48); }
+.nho-panel *, .hud *, .dock *, .lxcard * { opacity: 1; }
+.dock .dk, .dock button { color: var(--ui-fg) !important; opacity: 1 !important; font-weight: 600; }
+.dock .dk[disabled], .dock button[disabled] { opacity: 0.55 !important; }
+.hud-sub, .hud-k, .hud-u, .hud-req { color: var(--ui-fg2) !important; opacity: 1 !important; font-weight: 600; }
+.nho-panel .primary *, .nho-panel .primary small, .nho-panel .primary span { color: #fff !important; opacity: 0.92 !important; }
+.nho-panel [class*="sub"], .nho-panel [class*="hint"], .nho-panel [class*="note"], .nho-panel [class*="cap"], .nho-panel .muted, .nho-panel small {
+  color: var(--ui-fg2) !important; opacity: 1 !important; }
+.nho-panel [class*="banner"], .nho-panel [class*="cond-msg"], .nho-panel [role="status"] { color: var(--ui-fg) !important; opacity: 1 !important; }
+.nho-panel .identify, .nho-panel .identify * { color: #fff !important; opacity: 1 !important; text-shadow: 0 1px 2px rgba(0, 20, 80, 0.35) !important; } .nho-panel .identify .id-sub { opacity: 0.88 !important; }
+/* mais transparência (pedido do usuário) — legibilidade garantida por desfoque forte + contorno sutil no texto */
+:root { --lg-tint: rgba(255, 255, 255, 0.30); --lg-tint2: rgba(255, 255, 255, 0.12); --lg-card: rgba(255, 255, 255, 0.34);
+  --lg-txt-shadow: 0 0 6px rgba(255, 255, 255, 0.85), 0 1px 1px rgba(255, 255, 255, 0.9); }
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) { --lg-tint: rgba(18, 22, 30, 0.38); --lg-tint2: rgba(18, 22, 30, 0.18);
+  --lg-card: rgba(30, 35, 45, 0.36); --lg-txt-shadow: 0 0 6px rgba(0, 0, 0, 0.85), 0 1px 1px rgba(0, 0, 0, 0.9); } }
+:root[data-theme="dark"] { --lg-tint: rgba(18, 22, 30, 0.38); --lg-tint2: rgba(18, 22, 30, 0.18); --lg-card: rgba(30, 35, 45, 0.36);
+  --lg-txt-shadow: 0 0 6px rgba(0, 0, 0, 0.85), 0 1px 1px rgba(0, 0, 0, 0.9); }
+.nho-panel, .hud, .dock, .lxcard, .reopen { -webkit-backdrop-filter: blur(34px) saturate(2) brightness(1.06) !important; backdrop-filter: blur(34px) saturate(2) brightness(1.06) !important; }
+.nho-panel *, .hud *, .dock *, .lxcard * { text-shadow: var(--lg-txt-shadow); }
+.hud-rep, .hud-rep *, .nho-panel .identify * { text-shadow: 0 1px 2px rgba(0, 20, 80, 0.35) !important; }
