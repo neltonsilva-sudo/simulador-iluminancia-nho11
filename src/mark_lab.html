@@ -1,0 +1,50 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Marcação — bancada</title>
+<style>html,body{margin:0;height:100%;overflow:hidden;background:#15171a} #c{position:fixed;inset:0;width:100%;height:100%;display:block}</style>
+<script type="importmap">
+{ "imports": { "three": "https://cdn.jsdelivr.net/npm/three@0.169.0/build/three.module.js", "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.169.0/examples/jsm/" } }
+</script>
+</head>
+<body>
+<canvas id="c"></canvas>
+<script type="module">
+// Bancada de look-dev da MARCAÇÃO: stage real do RENDER + sala simples (caixa cinza, perfis, luminárias simples).
+import * as THREE from 'three';
+import { createStage } from './scene.js';
+import { buildMarkers } from './markers.js';
+import * as NORM from './norm.js';
+import { illuminanceAt, LUM_TYPES } from './photometry.js';
+const qs = new URLSearchParams(location.search);
+const room = { L: 9.16, W: 5.9, H: 2.7, plane: 0.75 }, arr = { N: 4, M: 2, config: 1 };
+const stage = createStage(document.getElementById('c'), { quality: 'alta' });
+stage.setRoom(room);
+const { scene } = stage;
+const m = (c, r = 0.8) => new THREE.MeshStandardMaterial({ color: c, roughness: r });
+const box = new THREE.Mesh(new THREE.BoxGeometry(room.W, room.H, room.L), [m(0xe8e8e6), m(0xe8e8e6), m(0xf0f0ee), m(0x9a9d9f, 0.4), m(0xe8e8e6), m(0xe8e8e6)].map((x) => { x.side = THREE.BackSide; return x; }));
+box.position.y = room.H / 2; box.name = 'piso_lab'; scene.add(box);
+const lums = NORM.layoutLuminaires(room, arr);
+for (const l of lums) {
+  const b = new THREE.Mesh(new THREE.BoxGeometry(l.len, 0.05, 0.09), new THREE.MeshStandardMaterial({ color: 0xffffff, emissive: 0xffffff, emissiveIntensity: 400 }));
+  b.position.set(l.x, room.H - 0.025, l.z); scene.add(b);
+  const rl = new THREE.RectAreaLight(0xf4f7ff, 1850 * 0.9 / (Math.PI * l.len * 0.09) / 683 * 683 * 0.0012, l.len, 0.09); rl.position.set(l.x, room.H - 0.052, l.z); rl.lookAt(l.x, 0, l.z); scene.add(rl);
+}
+// perfis do forro (para testar o "assentamento" dos adesivos)
+for (let z = -room.L / 2 + 1.15; z < room.L / 2; z += 2.29) { const p = new THREE.Mesh(new THREE.BoxGeometry(room.W, 0.12, 0.08), m(0x8e9296, 0.5)); p.position.set(0, room.H - 0.06, z); scene.add(p); }
+// algumas cadeiras-bloco
+for (let i = 0; i < 6; i++) for (let j = 0; j < 4; j++) { const c = new THREE.Mesh(new THREE.BoxGeometry(0.5, 0.8, 0.5), m(0x1d4fbf, 0.5)); c.position.set(-2.1 + i * 0.85, 0.4, -2.8 + j * 1.6); scene.add(c); }
+scene.add(new THREE.HemisphereLight(0xffffff, 0x777777, 40));
+const spec = { ...LUM_TYPES[0], on: true, dim: 1, config: 1 };
+const values = NORM.EXEMPLOS.planilha.values;
+window.__sim = { state: { room }, points: () => NORM.measurementPoints(room, arr), luminaires: () => lums, simulatedLux: (x, z) => illuminanceAt(x, room.plane, z, lums, room, spec) };
+const mk = buildMarkers(stage); window.__mk = mk;
+mk.show(__sim.points(), room, { animate: qs.get('anim') === '1', config: 1 });
+if (qs.get('vals') === '1') { const im = NORM.computeIM(1, values, { N: 4, M: 2, L: room.L, W: room.W }); mk.setValues(values, { lim70: 0.7 * im.E }); }
+if (qs.get('lux')) { mk.highlight(qs.get('lux')); mk.luxmeterTo(qs.get('lux')); }
+stage.setView(qs.get('cam') || 'overview', { animate: false, orbit: qs.get('orbit') });
+</script>
+</body>
+</html>

@@ -1,0 +1,7 @@
+shots/
+refs/
+docs/*.pdf
+docs/nho11.txt
+BRIEF.md
+INSPECT_BRIEF.md
+.DS_Store

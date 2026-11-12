@@ -1,0 +1,47 @@
+<!doctype html>
+<html lang="pt-BR"><head><meta charset="utf-8"><title>Lookdev mobiliário</title>
+<style>html,body{margin:0;height:100%;overflow:hidden;background:#222}canvas{display:block;width:100%;height:100%}</style>
+<script type="importmap">{ "imports": { "three": "https://cdn.jsdelivr.net/npm/three@0.169.0/build/three.module.js", "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.169.0/examples/jsm/" } }</script>
+</head><body><canvas id="c"></canvas>
+<script type="module">
+// Bancada de look-dev do MOBILIÁRIO (iluminação neutra estável, independente dos outros módulos). Dono: MOBILIÁRIO.
+import * as THREE from 'three';
+import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
+import { RectAreaLightUniformsLib } from 'three/addons/lights/RectAreaLightUniformsLib.js';
+import { buildFurniture } from './furniture.js';
+const qs = new URLSearchParams(location.search);
+const canvas = document.getElementById('c');
+RectAreaLightUniformsLib.init();
+const renderer = new THREE.WebGLRenderer({ canvas, antialias: true, preserveDrawingBuffer: true });
+renderer.setPixelRatio(1); renderer.toneMapping = THREE.AgXToneMapping; renderer.toneMappingExposure = +(qs.get('exp') || 1.0);
+renderer.shadowMap.enabled = true; renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+const scene = new THREE.Scene(); scene.background = new THREE.Color(0x202326);
+const pm = new THREE.PMREMGenerator(renderer); scene.environment = pm.fromScene(new RoomEnvironment(), 0.04).texture; scene.environmentIntensity = 0.45;
+const camera = new THREE.PerspectiveCamera(62, 1, 0.05, 100);
+const room = { L: +(qs.get('L') || 9.16), W: +(qs.get('W') || 5.9), H: 2.7, plane: 0.75 };
+const { L, W, H } = room;
+const wall = new THREE.MeshStandardMaterial({ color: 0xeeeeec, roughness: 0.8, side: THREE.BackSide });
+const floor = new THREE.MeshStandardMaterial({ color: 0xb8bbbd, roughness: 0.18, metalness: 0 });
+const box = new THREE.Mesh(new THREE.BoxGeometry(W, H, L), [wall, wall, wall, wall, wall, wall]); box.position.y = H / 2; box.receiveShadow = true; scene.add(box);
+const fl = new THREE.Mesh(new THREE.PlaneGeometry(W, L), floor); fl.rotation.x = -Math.PI / 2; fl.position.y = 0.001; fl.receiveShadow = true; scene.add(fl);
+scene.add(new THREE.HemisphereLight(0xffffff, 0x999999, 0.5));
+for (const z of [-L * 3 / 8, -L / 8, L / 8, L * 3 / 8]) for (const x of [-W / 4, W / 4]) {
+  const rl = new THREE.RectAreaLight(0xf4f8ff, 9, 1.2, 0.06); rl.position.set(x, H - 0.05, z); rl.lookAt(x, 0, z); scene.add(rl);
+  const bar = new THREE.Mesh(new THREE.BoxGeometry(1.2, 0.03, 0.04), new THREE.MeshBasicMaterial({ color: 0xffffff })); bar.position.set(x, H - 0.03, z); scene.add(bar);
+  const sp = new THREE.SpotLight(0xf4f8ff, 6, 0, 1.2, 1, 2); sp.position.set(x, H - 0.08, z); sp.target.position.set(x, 0, z); sp.castShadow = true;
+  sp.shadow.mapSize.set(1024, 1024); sp.shadow.radius = 6; sp.shadow.bias = -0.0004; sp.shadow.normalBias = 0.01; scene.add(sp, sp.target);
+}
+const frameFns = [];
+const stage = { THREE, renderer, scene, camera, canvas, room, onFrame: (f) => frameFns.push(f) };
+const furn = buildFurniture(stage, room); furn.update(room, []);
+const cam = qs.get('cam') || 'ref1';
+if (cam === 'ref1') { camera.position.set(0.35, 1.62, L / 2 - 0.35); camera.lookAt(0.1, 2.05, -L / 2); camera.fov = 62; }
+else if (cam === 'orbit') { const [ang, h, r, tx, ty, tz, fov] = qs.get('orbit').split(',').map(Number); camera.position.set(tx + r * Math.sin(ang), h, tz + r * Math.cos(ang)); camera.lookAt(tx, ty, tz); camera.fov = fov || 55; }
+else if (cam === 'photo') { const y = 21.8 * Math.PI / 180, pt = 3.8 * Math.PI / 180; camera.position.set(-1.94, 1.6, L / 2 - 0.45); camera.lookAt(-1.94 + Math.sin(y), 1.6 + Math.tan(pt), L / 2 - 0.45 - Math.cos(y)); camera.fov = 46.8; }
+else if (cam === 'top') { camera.position.set(0, 14, 0.01); camera.lookAt(0, 0, 0); camera.fov = 45; }
+function resize() { const w = innerWidth, h = innerHeight; renderer.setSize(w, h, false); camera.aspect = cam === 'photo' ? 1.414 : w / h; camera.updateProjectionMatrix(); }
+addEventListener('resize', resize); resize();
+let last = performance.now(), fc = 0, ft = 0;
+renderer.setAnimationLoop((now) => { const dt = (now - last) / 1000; last = now; fc++; ft += dt; if (ft > 1) { window.__fps = Math.round(fc / ft); fc = 0; ft = 0; } frameFns.forEach((f) => f(dt, now / 1000)); renderer.render(scene, camera); });
+window.__furn = furn;
+</script></body></html>
