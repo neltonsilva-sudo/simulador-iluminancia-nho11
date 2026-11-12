@@ -691,3 +691,8 @@ select.inp { appearance: none; padding-right: 30px; background-image: url("data:
 .nho-panel .btn-primary, .nho-panel .btn-primary *, .nho-panel [data-act="report"], .nho-panel [data-act="report"] * { color: #ffcc33 !important; text-shadow: 0 1px 2px rgba(0, 0, 0, 0.6) !important; }
 .hud-rep, .hud-rep * { color: #ffcc33 !important; }
 .nho-panel .hero-t > span:first-child { color: #ffcc33 !important; text-shadow: 0 1px 2px rgba(0,0,0,0.75) !important; }
+/* croqui sempre no modo claro (pedido do usuário), inclusive no tema escuro */
+.cro-box, :root[data-theme="dark"] .cro-box { background: #ffffff !important; border-color: rgba(0, 0, 0, 0.12) !important; }
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) .cro-box { background: #ffffff !important; } }
+.cro-box *, .zoom-b * { text-shadow: none !important; }
+.zoom-b { background: #ffffff !important; }

@@ -270,7 +270,7 @@ export function createUI(root, app) {
     </div>
     <div class="cro-box"></div>
     <div class="legend">${['P', 'T', 'Q', 'R'].map((g) => `<span><i style="background:${GROUP_COLORS[g]}"></i>${g}</span>`).join('')}<span><i class="lk"></i>Luminária</span><span><i class="wk"></i>Janela</span></div>
-    <p class="hint">${icon('info')} Planta vista de cima: parede do quadro no topo, porta à direita. Clique num ponto para digitar a leitura.</p>`;
+    <p class="hint">${icon('info')} Planta vista de cima: parede do quadro no topo, porta à esquerda. Clique num ponto para digitar a leitura.</p>`;
   }
 
   // ===================== referências =====================
@@ -430,7 +430,7 @@ export function createUI(root, app) {
   // ---------- croqui ----------
   $$(root, '[data-cro]').forEach((c) => { c.checked = !!store[c.dataset.cro]; c.onchange = () => { store[c.dataset.cro] = c.checked; persist(); renderCroqui(); }; });
   const croBox = $(root, '.cro-box');
-  function renderCroqui() { croBox.innerHTML = croquiFromApp(app, { dark: isDark(), interactive: true, active: activeId, construct: store.construct, values: store.cvals ? S.values : {}, idPrefix: 'pn' }); }
+  function renderCroqui() { croBox.innerHTML = croquiFromApp(app, { dark: false, interactive: true, active: activeId, construct: store.construct, values: store.cvals ? S.values : {}, idPrefix: 'pn' }); }
   croBox.addEventListener('click', (e) => { const g = e.target.closest('.cq-pt'); if (g) gotoField(g.dataset.id); });
   function gotoField(id) { if (store.collapsed) setCollapsed(false); if (isMobile() && panel.dataset.sheet === 'peek') setSheet('half'); setTab('med'); requestAnimationFrame(() => focusField(id)); }
   const download = (blob, name) => { const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = name; document.body.appendChild(a); a.click(); setTimeout(() => { URL.revokeObjectURL(a.href); a.remove(); }, 500); };
@@ -443,7 +443,7 @@ export function createUI(root, app) {
   }
   function zoomCroqui() {
     const ov = document.createElement('div'); ov.className = 'zoom'; ov.setAttribute('role', 'dialog'); ov.setAttribute('aria-modal', 'true'); ov.setAttribute('aria-label', 'Croqui ampliado');
-    ov.innerHTML = `<div class="zoom-c"><div class="zoom-h"><b>Croqui — ${esc(NORM.configById(S.config).short)} (Fig. ${NORM.configById(S.config).fig})</b><button type="button" class="ib" aria-label="Fechar">${icon('x')}</button></div><div class="zoom-b">${croquiFromApp(app, { dark: isDark(), construct: store.construct, values: store.cvals ? S.values : {}, idPrefix: 'zm' })}</div></div>`;
+    ov.innerHTML = `<div class="zoom-c"><div class="zoom-h"><b>Croqui — ${esc(NORM.configById(S.config).short)} (Fig. ${NORM.configById(S.config).fig})</b><button type="button" class="ib" aria-label="Fechar">${icon('x')}</button></div><div class="zoom-b">${croquiFromApp(app, { dark: false, construct: store.construct, values: store.cvals ? S.values : {}, idPrefix: 'zm' })}</div></div>`;
     root.appendChild(ov); const btn = $(ov, 'button'); const prev = document.activeElement; btn.focus();
     const close = () => { ov.remove(); document.removeEventListener('keydown', k, true); prev?.focus?.(); };
     const k = (e) => { if (e.key === 'Escape') { e.preventDefault(); close(); } };
