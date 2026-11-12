@@ -2,8 +2,8 @@
 // tamanho constante na tela) e legenda em canvas (DOM). Cálculo num Web Worker (fallback síncrono), com debounce.
 // Dono: FOTOMETRIA.
 import * as THREE from 'three';
-import { computeGrid, REFLECT, MF, OPENINGS, primeGeometry, hasGeometry } from './photo_core.js';
-import { colorizeGrid, contours, isoLevels, niceRange, anchoredRange, colorAt } from './photo_color.js';
+import { computeGrid, REFLECT, MF, OPENINGS, primeGeometry, hasGeometry, sunPatches, skyCondition, setOpenings, openingsFromRoom } from './photo_core.js';
+import { colorizeGrid, contours, isoLevels, niceRange, anchoredRange, rangeT, colorAt, ESCALA } from './photo_color.js';
 import { attachOverlay } from './photo_overlay.js';
 
 const NX = 128;            // amostras ao longo de W (a grade fica ≈128 × 199 na sala padrão)
@@ -69,6 +69,13 @@ export function buildIsolux(stage) {
   let lastReq = Ereq();
   // troca de ambiente (Quadro 1) muda a âncora da escala de cores → recolorir
   try { globalThis.__sim?.on?.('change', () => { const e = Ereq(); if (e !== lastReq) { lastReq = e; if (visible) schedule(); else dirty = true; } }); } catch { /* sem app */ }
+  // aberturas da SALA (room.getOpenings, quando existir) → luz natural e refletâncias das janelas/porta
+  let roomMod = null, lastOpen = ''; import('./room.js').then((m) => { roomMod = m; if (args) { syncOpenings(args[1]); if (visible) schedule(); } }).catch(() => {});
+  function syncOpenings(r) {
+    if (typeof roomMod?.getOpenings !== 'function' || !r) return;
+    try { const conv = openingsFromRoom(roomMod.getOpenings(r), r); if (!conv) return; const k = JSON.stringify(conv); if (k !== lastOpen) { lastOpen = k; setOpenings(conv); } }
+    catch (e) { console.warn('[isolux] getOpenings', e); }
+  }
   // pré-aquece os fatores de forma de salas novas no worker (evita 0,2–1 s de trava na thread principal)
   const geomAsked = new Set();
   function prewarm(r) {
@@ -86,7 +93,7 @@ export function buildIsolux(stage) {
     if (worker) { if (busy) pending = job; else post(job); return; }
     // fallback síncrono (grade reduzida para não travar)
     const g = computeGrid(job.lums, job.room, job.spec, 0.25, { nx: 72, nz: Math.round(72 * room.L / room.W) });
-    const rgba = colorizeGrid(g, Math.round(cw / 2), Math.round(ch / 2), anchoredRange(g.Emax, job.Ereq));
+    const rgba = colorizeGrid(g, Math.round(cw / 2), Math.round(ch / 2), anchoredRange(g.Emax, job.Ereq, g.Emin));
     applied = job.seq; apply(g, rgba, Math.round(cw / 2), Math.round(ch / 2), rgba.range);
   }
   function schedule() { clearTimeout(timer); timer = setTimeout(run, DEBOUNCE); }
@@ -102,7 +109,10 @@ export function buildIsolux(stage) {
     ctx.globalCompositeOperation = 'destination-in'; ctx.fillStyle = `rgba(0,0,0,${lit ? 0.86 : 0.35})`; ctx.fillRect(0, 0, cw, ch);
     ctx.globalCompositeOperation = 'source-over';
     const sx = cw / g.nx, sz = ch / g.nz, toPx = (p) => [(p[0] + 0.5) * sx, (p[1] + 0.5) * sz];
-    const levels = lit ? isoLevels(g.Emin, g.Emax, niceRange(g.Emin, g.Emax)) : []; // linhas: passo fino dos dados; cores: escala ancorada
+    // linhas: passo fino dos dados (escala linear) ou só a escala NHO até ~1.000 lx (com sol direto); cores: escala ancorada
+    const cap = Math.max(1000, 2 * Ereq());
+    const levels = !lit ? [] : R.log ? ESCALA.filter((v) => v > g.Emin && v < Math.min(g.Emax, cap)).map((v) => ({ v, major: true }))
+      : isoLevels(g.Emin, g.Emax, niceRange(g.Emin, g.Emax));
     const lines = [];
     // 70 % de Ē (critério do item 5 da NHO-11) — tracejada
     const e70 = 0.7 * g.Emed; const show70 = lit && e70 > g.Emin && e70 < g.Emax;
@@ -118,6 +128,19 @@ export function buildIsolux(stage) {
       ctx.strokeStyle = L.kind === '70' ? '#ffffff' : (L.major ? 'rgba(255,255,255,0.98)' : 'rgba(255,255,255,0.82)'); ctx.lineWidth = w; ctx.stroke();
     }
     ctx.setLineDash([]);
+    // manchas de sol direto (céu ensolarado): contorno âmbar tracejado + rótulo
+    const suns = lit ? sunPatches(room, curSpec || {}, room.plane) : [];
+    if (suns.length) {
+      const toG = (q) => [(q[0] + room.W / 2) / room.W * g.nx - 0.5, (q[1] + room.L / 2) / room.L * g.nz - 0.5];
+      for (const sp of suns) {
+        const path = () => { ctx.beginPath(); sp.pts.forEach((q, k) => { const [px, py] = toPx(toG(q)); k ? ctx.lineTo(px, py) : ctx.moveTo(px, py); }); ctx.closePath(); };
+        path(); ctx.fillStyle = 'rgba(255,214,90,0.20)'; ctx.fill();
+        ctx.setLineDash([]); ctx.strokeStyle = 'rgba(40,24,0,0.55)'; ctx.lineWidth = 0.075 * m; ctx.stroke();
+        path(); ctx.setLineDash([0.14 * m, 0.08 * m]); ctx.strokeStyle = '#ffd25a'; ctx.lineWidth = 0.05 * m; ctx.stroke();
+      }
+      ctx.setLineDash([]);
+      lines.push({ v: suns[0].E, kind: 'sun', major: true, cs: suns.map((sp) => ({ closed: true, pts: [...sp.pts, sp.pts[0]].map(toG) })) });
+    }
     // contorno das luminárias (projeção no plano), estilo planta luminotécnica
     for (const l of curLums || []) {
       const panel = curSpec?.dist === 'panel' || curSpec?.kind === 'panel';
@@ -157,7 +180,7 @@ export function buildIsolux(stage) {
   let chainsW = [];
   function placeLabels(g, lines) {
     const W = room.W, L = room.L, toW = (p) => [-W / 2 + (p[0] + 0.5) / g.nx * W, -L / 2 + (p[1] + 0.5) / g.nz * L];
-    chainsW = [...lines].sort((a, b) => (b.kind === '70') - (a.kind === '70') || (b.major ? 1 : 0) - (a.major ? 1 : 0) || a.v - b.v)
+    chainsW = [...lines].sort((a, b) => (b.kind === 'sun') - (a.kind === 'sun') || (b.kind === '70') - (a.kind === '70') || (b.major ? 1 : 0) - (a.major ? 1 : 0) || a.v - b.v)
       .map((Ln) => ({ Ln, chains: Ln.cs.map((c) => { const w = c.pts.map(toW); let len = 0; for (let k = 1; k < w.length; k++) len += Math.hypot(w[k][0] - w[k - 1][0], w[k][1] - w[k - 1][1]); return { w, len }; })
         .filter((c) => c.len > 0.6).sort((a, b) => b.len - a.len) }));
     layoutLabels();
@@ -189,7 +212,7 @@ export function buildIsolux(stage) {
     const hit = (r) => blocks.some((o) => r[0] < o[2] + 6 && r[2] > o[0] - 6 && r[1] < o[3] + 6 && r[3] > o[1] - 6) || rects.some((o) => r[0] < o[2] + 8 && r[2] > o[0] - 8 && r[1] < o[3] + 6 && r[3] > o[1] - 6)
       || marks.some((m) => m[0] > r[0] - m[2] && m[0] < r[2] + m[2] && m[1] > r[1] - 30 && m[1] < r[3] + 36);
     for (const { Ln, chains } of chainsW) {
-      const text = Ln.kind === '70' ? `70% Ē · ${fmtInt(Ln.v)} lx` : `${fmtInt(Ln.v)} lx`;
+      const text = Ln.kind === '70' ? `70% Ē · ${fmtInt(Ln.v)} lx` : Ln.kind === 'sun' ? `sol direto ≈ ${fmtInt(Math.round(Ln.v / 100) * 100)} lx` : `${fmtInt(Ln.v)} lx`;
       const lt = labelTexture(text, Ln.kind === '70' || Ln.major), wpx = hpx * lt.aspect;
       let count = 0;
       for (const c of chains) {
@@ -198,12 +221,12 @@ export function buildIsolux(stage) {
           let best = null, bestS = -Infinity;
           // a linha de 70 % Ē costuma ser um arco curto no canto: se o rótulo não couber sobre ela, desloca para dentro
           const cand = []; for (let k = 0; k < c.w.length; k += 2) cand.push(c.w[k]);
-          if (Ln.kind === '70') for (const sh of [0.35, 0.6, 0.9]) for (let k = 0; k < c.w.length; k += 3) { const [px, pz] = c.w[k], d = Math.hypot(px, pz) || 1; cand.push([px - px / d * sh, pz - pz / d * sh, sh]); }
+          if (Ln.kind === '70' || Ln.kind === 'sun') for (const sh of [0.35, 0.6, 0.9]) for (let k = 0; k < c.w.length; k += 3) { const [px, pz] = c.w[k], d = Math.hypot(px, pz) || 1; cand.push([px - px / d * sh, pz - pz / d * sh, sh]); }
           for (const cw of cand) {
-            const [x, z] = cw, wall = Math.min(W2() - Math.abs(x), L2() - Math.abs(z)); if (wall < (Ln.kind === '70' ? 0.2 : 0.5)) continue;
+            const [x, z] = cw, wall = Math.min(W2() - Math.abs(x), L2() - Math.abs(z)); if (wall < (Ln.kind === '70' || Ln.kind === 'sun' ? 0.2 : 0.5)) continue;
             const q = proj(x, z); if (!q) continue;
             const r = [q[0] - wpx / 2, q[1] - hpx / 2, q[0] + wpx / 2, q[1] + hpx / 2];
-            if (r[0] < 6 || r[1] < 6 || r[2] > vw - 6 || r[3] > vh - 6 || hit(r) || !rectInside(r, Ln.kind === '70' ? 10 : -2)) continue;
+            if (r[0] < 6 || r[1] < 6 || r[2] > vw - 6 || r[3] > vh - 6 || hit(r) || !rectInside(r, Ln.kind === '70' || Ln.kind === 'sun' ? 10 : -2)) continue;
             let dl = 400; for (const o of rects) dl = Math.min(dl, Math.hypot((o[0] + o[2]) / 2 - q[0], (o[1] + o[3]) / 2 - q[1]));
             const s = Math.min(dl, 260) + 40 * Math.min(wall, 1.5) - 200 * (cw[2] || 0);
             if (s > bestS) { bestS = s; best = { x, z, r }; }
@@ -243,14 +266,14 @@ export function buildIsolux(stage) {
     x.textBaseline = 'alphabetic'; x.fillStyle = '#eef2f7'; x.font = font(650, 12); x.fillText('Simulação (luxímetro virtual)', 14, 20);
     const tw = x.measureText('Simulação (luxímetro virtual)').width;
     x.font = font(500, 10.5); x.fillStyle = 'rgba(233,237,243,0.58)';
-    x.fillText(`· plano ${fmt2(room.plane ?? 0.75).replace(/0$/, '')} m`, 14 + tw + 6, 20);
-    x.textAlign = 'right'; x.fillText('lux', Wc - 14, 20); x.textAlign = 'left';
+    x.fillText(`· ${skyCondition(curSpec || {}).label}`, 14 + tw + 6, 20);
+    x.textAlign = 'right'; x.fillText(range?.log ? 'lux · log' : 'lux', Wc - 14, 20); x.textAlign = 'left';
     if (!stats || !stats.lit) { x.fillStyle = 'rgba(233,237,243,0.75)'; x.font = font(500, 12); x.fillText('Luminárias desligadas — 0 lux', 14, 62); return; }
     const bx = 14, by = 48, bw = Wc - 28, bh = 12, R = range;
     const gr = x.createLinearGradient(bx, 0, bx + bw, 0);
     for (let k = 0; k <= 16; k++) { const c = colorAt(k / 16); gr.addColorStop(k / 16, `rgb(${c[0] | 0},${c[1] | 0},${c[2] | 0})`); }
     x.beginPath(); x.roundRect(bx, by, bw, bh, 3); x.fillStyle = gr; x.fill();
-    const X = (v) => bx + Math.min(1, Math.max(0, (v - R.lo) / (R.hi - R.lo))) * bw;
+    const X = (v) => bx + rangeT(R, v) * bw;
     // colchete sob a barra: faixa presente na sala (Emín–Emáx)
     const x0 = X(stats.Emin), x1 = X(stats.Emax);
     x.strokeStyle = 'rgba(255,255,255,0.85)'; x.lineWidth = 1.4; x.beginPath(); x.moveTo(x0, by + bh + 2); x.lineTo(x0, by + bh + 6); x.lineTo(x1, by + bh + 6); x.lineTo(x1, by + bh + 2); x.stroke();
@@ -266,7 +289,10 @@ export function buildIsolux(stage) {
       if (lx < lastRight + 6) lx = lastRight + 6; lx = Math.min(Wc - 12 - w, lx); x.fillStyle = t.color === '#ffffff' ? '#eef2f7' : t.color; x.fillText(t.text, lx, by - 7); lastRight = lx + w; }
     // escala
     x.font = font(500, 10); x.fillStyle = 'rgba(233,237,243,0.72)'; x.textAlign = 'center';
-    for (let v = R.lo; v <= R.hi + 1e-9; v += R.step) x.fillText(fmtInt(v), Math.min(Wc - 16, Math.max(16, X(v))), by + bh + 19);
+    const ticks = R.ticks || (() => { const a = []; for (let v = R.lo; v <= R.hi + 1e-9; v += R.step) a.push(v); return a; })();
+    const tk = (v) => (v >= 10000 ? `${fmtInt(v / 1000)}k` : fmtInt(v)); let lastTx = -1e9;
+    for (const v of ticks) { const px = Math.min(Wc - 16, Math.max(16, X(v))); if (px - lastTx < 26) continue; x.fillText(tk(v), px, by + bh + 19); lastTx = px; }
+
     x.textAlign = 'left';
     let cx = 14; const item = (k, v, col) => { x.font = font(500, 11); x.fillStyle = 'rgba(233,237,243,0.6)'; x.fillText(k, cx, Hc - 12); cx += x.measureText(k).width + 4;
       x.font = font(650, 11.5); x.fillStyle = col || '#f3f6fa'; x.fillText(v, cx, Hc - 12); cx += x.measureText(v).width + 12; };
@@ -277,7 +303,7 @@ export function buildIsolux(stage) {
   return {
     group,
     legend,
-    update(lums, r, spec) { args = [lums, r, spec]; prewarm(r); if (visible) schedule(); else dirty = true; },
+    update(lums, r, spec) { syncOpenings(r); args = [lums, r, spec]; prewarm(r); if (visible) schedule(); else dirty = true; },
     setVisible(b) { visible = !!b; setShown(visible && !!stats);
       if (visible && (dirty || !stats) && args) schedule(); },
     stats: () => stats,

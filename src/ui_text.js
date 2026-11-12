@@ -57,7 +57,11 @@ export function parecer(app, r, ctx = {}) {
   }
   const E = r.E, Emin = r.Emin, tol = Emin * 0.9;
   const chk = Object.fromEntries((r.checks || []).map((c) => [c.id, c]));
-  const fails = (r.checks || []).filter((c) => c.ok === false);
+  const fails = (r.checks || []).filter((c) => c.ok === false && c.id !== 'condicao');
+  if (r.verdict === 'inconclusivo') return { title: 'Avaliação inconclusiva', tone: 'warn',
+    paras: [`Leituras feitas no período diurno com céu ensolarado: a luz natural eleva os valores (Ē = ${fmt(E, 2)} lux) e o resultado não representa a iluminação artificial instalada.`,
+      'Conforme o item 6.2 da NHO-11, a medição deve ocorrer na condição mais desfavorável, de forma que o iluminamento dependa somente das fontes instaladas. A avaliação é INCONCLUSIVA: repetir à noite ou em dia nublado.'],
+    recs: ['Repetir as medições à noite (ou em dia nublado, com janelas e cortinas como no uso normal).', 'Avaliar ofuscamento e reflexos causados pela incidência direta do sol (Anexo 2) — persianas ou películas podem ser necessárias.'] };
   const atende = r.verdict === 'atende';
   const adj = ctx.adjust ? ` (nível ${ctx.adjust > 0 ? 'aumentado' : 'reduzido'} em um degrau da escala do item 5.1 a partir de ${fmt(ctx.baseE, 0)} lux)` : '';
   const paras = [];
@@ -73,6 +77,7 @@ export function parecer(app, r, ctx = {}) {
   if (chk['200']) extra.push(chk['200'].ok ? 'nenhuma leitura é inferior a 200 lux (tarefas contínuas)' : 'há leituras inferiores a 200 lux, valor mínimo para áreas com tarefas contínuas');
   if (extra.length) paras.push('Quanto aos demais critérios do item 5, ' + extra.join('; ') + '.');
   if (r.note) paras.push(r.note);
+  if (r.condicao?.nivel === 'alerta') paras.push(r.condicao.texto);
   if (atende) paras.push(`Conclui-se que o ambiente ATENDE aos níveis mínimos de iluminamento da NHO-11 e, portanto, as condições de iluminação, quanto à iluminância, são adequadas conforme o item 17.8 da NR-17 (condições de conforto no ambiente de trabalho).`);
   else paras.push(`Conclui-se que o ambiente NÃO ATENDE à NHO-11 (${fails.map((c) => critName(c.id)).join('; ')}). As condições de iluminamento são, portanto, consideradas antiergonômicas, nos termos do item 17.8 da NR-17, que remete aos níveis de iluminamento da NHO-11 da Fundacentro.`);
   const recs = [];

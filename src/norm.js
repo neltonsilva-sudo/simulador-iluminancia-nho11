@@ -193,8 +193,22 @@ export function computeIM(configId, values, { N, M, L, W }) {
  * Avaliação conforme item 5 da NHO-11 + faixas da planilha de referência.
  * ctx = {E (média), Emin (Quadro 1), values (todos os pontos), task:[lux...] (área da tarefa, opcional), continuous:bool}
  */
-export function evaluate({ E, Emin, values = {}, task = [], continuous = true }) {
+/** Condição da medição (item 6.2 da NHO-11): período e céu. */
+export const CONDICOES = {
+  periodo: [{ id: 'noturno', label: 'Noturna' }, { id: 'diurno', label: 'Diurna' }],
+  ceu: [{ id: 'nublado', label: 'Nublado' }, { id: 'ensolarado', label: 'Ensolarado' }],
+};
+export function condicaoMedicao({ periodo = 'noturno', ceu = 'nublado', atividadeNoturna = false } = {}) {
+  if (periodo === 'noturno') return { ok: true, nivel: 'ok', texto: 'Medição noturna: o iluminamento depende somente das fontes instaladas (condição mais desfavorável — item 6.2 da NHO-11).' };
+  if (ceu === 'nublado') return { ok: true, nivel: atividadeNoturna ? 'alerta' : 'ok',
+    texto: 'Medição diurna com céu nublado: aceita pelo item 6.2 da NHO-11 como condição desfavorável, com janelas e cortinas como no uso normal; avaliar reflexos e ofuscamento da luz natural (Anexo 2).'
+      + (atividadeNoturna ? ' Como há atividades noturnas no ambiente, as medições também devem ser feitas à noite.' : '') };
+  return { ok: false, nivel: 'invalida', texto: 'Medição diurna com céu ensolarado: a luz natural eleva as leituras e o resultado NÃO representa a iluminação instalada. O item 6.2 da NHO-11 exige medir na condição mais desfavorável (dia nublado ou à noite); repetir a avaliação. Verificar também ofuscamento e reflexos causados pelo sol (Anexo 2).' };
+}
+
+export function evaluate({ E, Emin, values = {}, task = [], continuous = true, periodo = 'noturno', ceu = 'nublado', atividadeNoturna = false }) {
   const res = { checks: [], verdict: 'incompleto' };
+  res.condicao = condicaoMedicao({ periodo, ceu, atividadeNoturna });
   if (!isFinite(E)) return res;
   const pts = Object.values(values).map(num).filter((v) => v != null);
   const taskV = (task.length ? task : pts).map(num).filter((v) => v != null);
@@ -216,8 +230,10 @@ export function evaluate({ E, Emin, values = {}, task = [], continuous = true })
     res.note = 'Sem leituras da área da tarefa: os critérios de 70% de Ē, 5:1 e 200 lux foram aplicados às leituras da malha do Anexo 1.';
   }
   if (continuous) push('200', 'Tarefas contínuas: nenhuma leitura < 200 lux', minPt >= 200, `Menor leitura: ${fmt(minPt, 1)} lux`);
-  const fails = res.checks.filter((c) => c.ok === false).length;
-  res.verdict = fails ? 'nao-atende' : 'atende';
+  push('condicao', `Condição da medição (item 6.2): ${periodo === 'noturno' ? 'noturna' : `diurna, céu ${ceu}`}`, res.condicao.ok, res.condicao.texto);
+  const fails = res.checks.filter((c) => c.ok === false && c.id !== 'condicao').length;
+  // Medição sob sol: as leituras incluem luz natural — não se conclui sobre a iluminação instalada.
+  res.verdict = !res.condicao.ok ? 'inconclusivo' : fails ? 'nao-atende' : 'atende';
   res.bands = { E15: [E * 0.85, E * 1.15], lim70, lim70_15: [lim70 * 0.85, lim70 * 1.15], minReq };
   return res;
 }

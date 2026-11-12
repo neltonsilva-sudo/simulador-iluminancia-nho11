@@ -17,12 +17,12 @@ const VS = /* glsl */`varying vec2 vUv; void main(){ vUv = uv; gl_Position = pro
 
 const PreShader = {
   uniforms: {
-    tDiffuse: { value: null }, tAO: { value: null }, aoOn: { value: 0 }, aoIntensity: { value: 0.85 },
-    exposure: { value: 1 }, wb: { value: new THREE.Vector3(0.955, 1.0, 0.945) }, clampMax: { value: 48 },
+    tDiffuse: { value: null }, tAO: { value: null }, tAOMask: { value: null }, aoOn: { value: 0 }, aoIntensity: { value: 0.78 },
+    exposure: { value: 1 }, wb: { value: new THREE.Vector3(0.955, 1.0, 0.945) }, clampMax: { value: 24 },
   },
   vertexShader: VS,
   fragmentShader: /* glsl */`
-    uniform sampler2D tDiffuse; uniform sampler2D tAO; uniform float aoOn, aoIntensity, exposure, clampMax; uniform vec3 wb;
+    uniform sampler2D tDiffuse; uniform sampler2D tAO; uniform sampler2D tAOMask; uniform float aoOn, aoIntensity, exposure, clampMax; uniform vec3 wb;
     varying vec2 vUv;
     void main(){
       vec4 c = texture2D(tDiffuse, vUv);
@@ -33,7 +33,7 @@ const PreShader = {
         float ao = texture2D(tAO, vUv).r;
         float l = dot(col, vec3(0.2126, 0.7152, 0.0722));
         // AO atua na luz "difusa ambiente": some nas superfícies emissoras/estouradas
-        float w = aoIntensity * (1.0 - smoothstep(1.4, 5.0, l));
+        float w = aoIntensity * (1.0 - smoothstep(1.4, 5.0, l)) * texture2D(tAOMask, vUv).a;
         col *= mix(1.0, ao, w);
       }
       col = min(col, vec3(clampMax));
@@ -89,26 +89,56 @@ export function createPost(renderer, scene, camera, quality) {
   if (hi) {
     gtao = new GTAOPass(scene, camera, size.x, size.y);
     gtao.output = GTAOPass.OUTPUT.Off; gtao.needsSwap = false;
-    gtao.updateGtaoMaterial({ radius: 0.45, distanceExponent: 1.6, thickness: 1.2, distanceFallOff: 1.0, scale: 1.0, samples: 16 });
+    gtao.updateGtaoMaterial({ radius: 0.32, distanceExponent: 1.5, thickness: 0.6, distanceFallOff: 1.0, scale: 1.0, samples: 16 });
     gtao.updatePdMaterial({ lumaPhi: 10, depthPhi: 2, normalPhi: 3, radius: 6, rings: 2, samples: 16 });
-    // marcadores/isolux translúcidos e objetos marcados não entram no G-buffer da AO
-    const ov = gtao.overrideVisibility.bind(gtao);
-    gtao.overrideVisibility = function () {
-      ov();
+    // G-buffer próprio: cada malha recebe um material de normais cujo ALFA é a máscara de AO
+    //   1 = AO normal · 0,45 = geometria fina (tubos, perfis, pernas de tripé: AO reduzida) · 0 = userData.noAO (sem AO).
+    // A profundidade continua correta (a malha entra no G-buffer), só a aplicação da AO é mascarada no passe PRE.
+    // Translúcidos sem depthWrite (isolux, marcadores) e sprites ficam fora.
+    const nmFull = gtao.normalMaterial;
+    const nmThin = new THREE.MeshNormalMaterial({ blending: THREE.NoBlending, opacity: 0.45 });
+    const nmNone = new THREE.MeshNormalMaterial({ blending: THREE.NoBlending, opacity: 0.0 });
+    const _b = new THREE.Box3(), _sz = new THREE.Vector3(), _sc = new THREE.Vector3();
+    const thinOf = (o) => {
+      const g = o.geometry; if (!g) return false;
+      if (o.userData._aoThinG !== g.uuid) {
+        if (!g.boundingBox) g.computeBoundingBox();
+        _b.copy(g.boundingBox); _b.getSize(_sz); o.getWorldScale(_sc); _sz.multiply(_sc);
+        const d = [Math.abs(_sz.x), Math.abs(_sz.y), Math.abs(_sz.z)].sort((a, b) => a - b);
+        o.userData._aoThin = !o.isInstancedMesh && d[1] < 0.06 && d[2] > d[1] * 6; // barra/tubo/perfil
+        o.userData._aoThinG = g.uuid;
+      }
+      return o.userData._aoThin;
+    };
+    const swapped = [];
+    gtao.renderOverride = function (renderer, overrideMaterial, renderTarget, clearColor, clearAlpha) {
+      if (overrideMaterial !== nmFull) return GTAOPass.prototype.renderOverride.call(this, renderer, overrideMaterial, renderTarget, clearColor, clearAlpha);
       scene.traverse((o) => {
-        if (!o.visible) return;
+        if (!o.isMesh || !o.visible) return;
         const m = o.material;
-        if (o.userData.noAO || (m && !Array.isArray(m) && m.transparent && !m.depthWrite) || o.isSprite) o.visible = false;
+        const mm = Array.isArray(m) ? m[0] : m;
+        if (o.isSprite || (mm && mm.transparent && !mm.depthWrite)) { swapped.push([o, m, true]); o.visible = false; return; }
+        let nm = nmFull;
+        if (o.userData.noAO) nm = nmNone; else if (thinOf(o)) nm = nmThin;
+        swapped.push([o, m, false]); o.material = nm;
       });
+      renderer.getClearColor(this.originalClearColor);
+      const a0 = renderer.getClearAlpha(), ac = renderer.autoClear;
+      renderer.setRenderTarget(renderTarget); renderer.autoClear = false;
+      renderer.setClearColor(clearColor); renderer.setClearAlpha(1.0); renderer.clear();
+      renderer.render(scene, this.camera);
+      renderer.autoClear = ac; renderer.setClearColor(this.originalClearColor); renderer.setClearAlpha(a0);
+      for (const [o, m, hid] of swapped) { if (hid) o.visible = true; else o.material = m; }
+      swapped.length = 0;
     };
     composer.addPass(gtao);
   }
 
   const pre = new ShaderPass(PreShader);
-  if (gtao) { pre.uniforms.tAO.value = gtao.gtaoMap; pre.uniforms.aoOn.value = 1; }
+  if (gtao) { pre.uniforms.tAO.value = gtao.gtaoMap; pre.uniforms.tAOMask.value = gtao.normalRenderTarget.texture; pre.uniforms.aoOn.value = 1; }
   composer.addPass(pre);
 
-  const bloom = new UnrealBloomPass(new THREE.Vector2(size.x / 2, size.y / 2), hi ? 0.16 : 0.1, 0.5, 2.0);
+  const bloom = new UnrealBloomPass(new THREE.Vector2(size.x / 2, size.y / 2), hi ? 0.22 : 0.14, 0.62, 1.6);
   composer.addPass(bloom);
 
   const extraIndex = composer.passes.length; // passes extras HDR entram aqui
@@ -125,6 +155,7 @@ export function createPost(renderer, scene, camera, quality) {
 
   let nExtra = 0;
   return {
+    bloomBase: bloom.strength,
     composer, render, gtao, pre, bloom, output, aa, cam, hi,
     addPass(pass) { composer.insertPass(pass, extraIndex + nExtra++); },
     setSize(w, h) { // tamanho do drawing buffer (px reais)

@@ -30,7 +30,7 @@ export function wallFrame(wall, u, v, d = 0) {
 
 // ---------- janela de correr de alumínio (2 folhas) com grade externa ----------
 // local: origem no centro do vão, no plano da parede; z<0 = para fora (espessura da parede t)
-export function buildWindow(col, frame, w, h, { film = false, t = 0.075 } = {}) {
+export function buildWindow(col, frame, w, h, { film = false, t = 0.075, side = 'R' } = {}) {
   const fp = 0.032, fd = 0.068, zc = -t + fd / 2 + 0.002;
   // marco
   addBox(col, 'alu', w, fp, fd, 0, h / 2 - fp / 2, zc, frame);
@@ -53,7 +53,7 @@ export function buildWindow(col, frame, w, h, { film = false, t = 0.075 } = {}) 
     addBox(col, 'dark', gw, 0.006, 0.008, s.x, gh / 2 - 0.003, zz, frame); addBox(col, 'dark', gw, 0.006, 0.008, s.x, -gh / 2 + 0.003, zz, frame);
     addBox(col, 'dark', 0.006, gh, 0.008, s.x - gw / 2 + 0.003, 0, zz, frame); addBox(col, 'dark', 0.006, gh, 0.008, s.x + gw / 2 - 0.003, 0, zz, frame);
     addPlane(col, 'glass', gw, gh, s.x, 0, zz + 0.001, frame);
-    if (s.film) { const g = addPlane(col, 'film', gw - 0.01, gh - 0.01, s.x, 0, zz - 0.003, frame); g.userData.film = true; }
+    if (s.film) { const g = addPlane(col, 'film' + side, gw - 0.01, gh - 0.01, s.x, 0, zz - 0.003, frame); g.userData.film = true; }
   }
   // fecho no encontro das folhas
   addBox(col, 'dark', 0.016, 0.07, 0.016, -wi / 2 + sw - sp / 2, 0.02, -0.006, frame);
@@ -63,7 +63,7 @@ export function buildWindow(col, frame, w, h, { film = false, t = 0.075 } = {}) 
   for (let i = 1; i < nb; i++) { const x = -w / 2 + w * (i / nb); const b = new THREE.CylinderGeometry(0.008, 0.008, h + 0.08, 8); b.translate(x, 0, gz); b.applyMatrix4(frame); (col.grille ||= []).push(b); }
   for (const y of [-h / 2 + 0.015, 0.02, h / 2 - 0.015]) addBox(col, 'grille', w + 0.04, 0.03, 0.006, 0, y, gz - 0.012, frame);
   // exterior noturno (só visível pelo vão)
-  addPlane(col, film ? 'exterior' : 'night', w + 0.3, h + 0.3, 0, 0, -t - 0.09, frame);
+  addPlane(col, 'ext' + side, w + 0.9, h + 0.7, 0, 0, -t - 0.35, frame);
 }
 
 // ---------- porta (folha branca de aço, batente de alumínio, maçaneta de alavanca) ----------

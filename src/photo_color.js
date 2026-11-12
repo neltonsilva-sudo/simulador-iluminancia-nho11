@@ -27,11 +27,22 @@ export function niceRange(mn, mx) {
 }
 /** Escala de cores ANCORADA em 0 até ≥ max(Emáx, E exigido pelo Quadro 1): 210 lux numa sala que exige 500 não fica
  *  “vermelha”. Topo arredondado para um valor redondo (≈5–6 divisões). */
-export function anchoredRange(Emax, Ereq = 0) {
+export function anchoredRange(Emax, Ereq = 0, Emin = 0) {
   const top = Math.max(Emax || 0, Ereq || 0, 1);
+  // sol direto (dezenas de klx): escala LOGARÍTMICA (percepção ~ log; escala da NHO também é geométrica), do Emín ao Emáx
+  if (top > 2500 && top > 4 * Math.max(Ereq || 0, 1)) {
+    const T = [10, 20, 50, 100, 200, 500, 1000, 2000, 5000, 10000, 20000, 50000, 100000];
+    const lo = [...T].reverse().find((v) => v <= Math.max(10, (Emin || 0) * 0.9)) || 10, hi = T.find((v) => v >= top) || top;
+    return { lo, hi, log: true, ticks: T.filter((v) => v >= lo && v <= hi) };
+  }
   const steps = [5, 10, 25, 50, 100, 250, 500, 1000, 2500, 5000];
   const step = steps.find((st) => top / st <= 6) || 5000;
   return { lo: 0, hi: Math.ceil(top / step - 1e-9) * step, step };
+}
+/** Posição normalizada (0..1) de um valor na escala (linear ou log). */
+export function rangeT(R, v) {
+  if (R.log) return Math.min(1, Math.max(0, Math.log(Math.max(v, 1e-6) / R.lo) / Math.log(R.hi / R.lo)));
+  return Math.min(1, Math.max(0, (v - R.lo) / ((R.hi - R.lo) || 1)));
 }
 /** Níveis das linhas isolux: múltiplos do passo dentro de (Emín, Emáx); os da escala NHO são marcados `major`. */
 export function isoLevels(mn, mx, range = niceRange(mn, mx)) {
@@ -55,7 +66,7 @@ export function colorizeGrid(g, cw, ch, range) {
       const gx = (px + 0.5) / cw * nx - 0.5, i = Math.floor(gx), fx = gx - i;
       for (let q = 0; q < 4; q++) rowBuf[q] = cr(at(i - 1, j - 1 + q), at(i, j - 1 + q), at(i + 1, j - 1 + q), at(i + 2, j - 1 + q), fx);
       const v = cr(rowBuf[0], rowBuf[1], rowBuf[2], rowBuf[3], fz);
-      const k = Math.round(Math.min(1, Math.max(0, (v - R.lo) * inv)) * 1023) * 3, o = (py * cw + px) * 4;
+      const k = Math.round((R.log ? rangeT(R, v) : Math.min(1, Math.max(0, (v - R.lo) * inv))) * 1023) * 3, o = (py * cw + px) * 4;
       data[o] = lut[k]; data[o + 1] = lut[k + 1]; data[o + 2] = lut[k + 2]; data[o + 3] = 255;
     }
   }

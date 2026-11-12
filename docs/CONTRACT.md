@@ -4,7 +4,7 @@
 |---|---|---|
 | ORQUESTRADOR | main.js, norm.js, index.html | — (não editar) |
 | RENDER | scene.js (+ scene_*.js) | `createStage(canvas,{quality,still})` → stage |
-| SALA | room.js (+ room_*.js) | `buildRoom(stage, room)` → `{group, update(room)}` |
+| SALA | room.js (+ room_*.js) | `buildRoom(stage, room)` → `{group, update(room)}`; `getOpenings(room)` (pura) |
 | MOBILIÁRIO | furniture.js (+ furniture_*.js) | `buildFurniture(stage, room)` → `{group, update(room, lums), setVisible(b)}` |
 | LUMINÁRIAS | luminaires.js (+ lum_*.js) | `buildLuminaires(stage)` → `{group, update(list, room, spec), setOn(b), setDim(f)}` |
 | FOTOMETRIA | photometry.js (+ photo_*.js) | `LUM_TYPES`, `REFLECT`, `MF`, `illuminanceAt(x,y,z,lums,room,spec)`, `buildIsolux(stage)` → `{group, update(lums,room,spec), setVisible(b)}` |
@@ -45,6 +45,18 @@ verdict:'atende'|'nao-atende'|'incompleto', bands{E15,lim70,lim70_15,minReq}, ar
   difusas na radiosidade com exitância = daylight · `spec.daylightLux` (padrão `DAYLIGHT.extLux` = 10 000 lx, dia nublado) · 0,40 (E_vert/E_hor,
   céu encoberto CIE) · 0,62 (vidro × caixilho/grade). Sala padrão, daylight 1, luminárias desligadas: ≈450–490 lux junto às janelas, 242 lux no
   centro (FLD ≈ 2,4 %). Superpõe-se linearmente às luminárias; funciona com `on:false`. Em `illuminanceParts` a luz natural entra em `indirect`.
+- **Condição da avaliação** (spec do orquestrador): `period` ('noturno'|'diurno'), `sky` ('nublado'|'ensolarado'), `daylight` (0|1|2,5).
+  `skyCondition(spec)` → `{day, sunny, daylight, label:'Noturna'|'Diurna · nublado'|'Diurna · ensolarado'}`; 'noturno' força 0.
+  Nublado = céu CIE encoberto 10 klx (janelas difusas). Ensolarado = difusa ×2,5 + **sol direto** (`SUN` = {alt 35°, az 20° rumo a +z,
+  Edn 70 klx, τ 0,62}, manhã, entrando pelas janelas da parede x = −W/2): o sensor recebe Edn·τ·sen(alt) ≈ 24,9 klx quando o raio para o sol
+  passa por uma janela (sem sombra de móveis); o fluxo solar (raios das janelas até piso/parede) entra na radiosidade.
+  Sala padrão: Ē(NHO) noturna 208 · nublada 513 · ensolarada 2.146 lux; fator de luz diurna nublado médio 3,4 % (mín 1,2 %).
+- `sunPatches(room, spec, y = room.plane)` → `[{pts:[[x,z],…], y, E}]` — manchas de sol no plano horizontal y (use y = 0 para o piso),
+  já recortadas pela sala; [] sem sol. Mesma geometria usada no cálculo (para LUMINÁRIAS/RENDER desenharem).
+- `OPENINGS` (disposição atual: esquerda = porta junto à frente + 3 janelas 1,30×0,95 m, peitoril 1,25; direita = 4 janelas). Quando
+  room.js exportar `getOpenings(room)`, o isolux converte (`openingsFromRoom`, formato tolerante) e chama `setOpenings` automaticamente.
+- Isolux com sol: escala de cores logarítmica (Emín…Emáx, ticks 500/1k/2k/5k/10k…), isolinhas só da escala NHO até ~1.000 lx, manchas de
+  sol com contorno âmbar tracejado e rótulo “sol direto ≈ 24.900 lx”; legenda mostra a condição (“Diurna · ensolarado”).
 - **Fator por luminária** `spec.lumFactors = { 'L1.1': 0, 'L2.3': 0.55, … }` (ids de `layoutLuminaires`; 0 = queimada, <1 = depreciada,
   limite 0..2): multiplica a intensidade daquela luminária (direta + radiosidade). O isolux desenha a luminária queimada com ×, a depreciada em cinza.
 - `primeGeometry(room, data)` / `geometryData(room)` / `hasGeometry(room)`: fatores de forma (reciprocidade, ≤120 ms) pré-calculados no worker
@@ -62,3 +74,13 @@ verdict:'atende'|'nao-atende'|'incompleto', bands{E15,lim70,lim70_15,minReq}, ar
 ## Parâmetros de URL (capturas)
 `cam=ref1|overview|top|ceiling|orbit&orbit=…`, `ui=0`, `pts=1` (pontos visíveis), `iso=1`, `ex=planilha|anexo4`,
 `cfg=1..6`, `N=`, `M=`, `sim=1` (preenche leituras simuladas), `q=alta|media`, `still=1`.
+
+## SALA — aberturas (`import { getOpenings } from './room.js'`)
+`getOpenings(room)` é PURA (só depende de `{L, W, H}`; não precisa do stage) e devolve
+`[{kind:'window'|'door', wall:'left'|'right'|'front'|'back', x, z, width, sill, head}]` em metros, coordenadas do SPEC
+(origem no centro do piso). `x, z` = centro do vão no plano interno da parede (left: x=−W/2; right: x=+W/2);
+`width` ao longo da parede; `sill`/`head` = alturas do peitoril e da verga (porta: sill=0).
+Layout (pedido do usuário): parede esquerda x=−W/2 → PORTA no lugar da 1ª janela (a mais próxima de z=−L/2) + demais
+janelas; parede direita x=+W/2 → n janelas (padrão 9,16 m: esquerda 3 janelas + porta, direita 4 janelas).
+Janela padrão 1,30 × 0,95 m (verga 2,20 m, peitoril 1,25 m); porta 0,84 × 2,10 m. `n = max(1, round(L/2,29))`.
+A vista pelas janelas segue `__sim.state.avaliacao` ({periodo, ceu}) e o evento `'daylight'` (SALA não cria luzes).

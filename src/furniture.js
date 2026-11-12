@@ -4,6 +4,7 @@
 import * as THREE from 'three';
 import { chairSeatShell, chairBackShell, chairFrame, chairCaps, chairTablet, cushionSeat, cushionBack, teacherDesk, teacherChair } from './furniture_geo.js';
 import { furnitureTextures } from './furniture_tex.js';
+import * as ROOM from './room.js';
 
 const MAX = 160;
 
@@ -22,16 +23,16 @@ function makeMaterials(renderer) {
     sh.fragmentShader = sh.fragmentShader.replace('#include <alphamap_fragment>', `#ifdef USE_ALPHAMAP
       float holeA = texture2D( alphaMap, vAlphaMapUv ).g;
       float holePx = ${T.holeUv.toFixed(4)} / max( length( fwidth( vAlphaMapUv ) ), 1e-6 );
-      diffuseColor.a *= mix( 1.0, holeA, smoothstep( 2.2, 4.0, holePx ) );
+      diffuseColor.a *= mix( 1.0, holeA, smoothstep( 0.9, 1.8, holePx ) );
     #endif`);
   };
   ppBack.customProgramCacheKey = () => 'ppBackHoleFade';
   // aço tubular com pintura epóxi cinza-prata acetinada (foto: cinza-prata claro)
   const steel = new THREE.MeshPhysicalMaterial({
-    color: new THREE.Color('#c4c8cc'), metalness: 0.3, roughness: 1, roughnessMap: T.mtRough, normalMap: T.mtNormal, normalScale: new THREE.Vector2(0.04, 0.04),
+    color: new THREE.Color('#b4b8bc'), metalness: 0.3, roughness: 1, roughnessMap: T.mtRough, normalMap: T.mtNormal, normalScale: new THREE.Vector2(0.04, 0.04),
     clearcoat: 0.1, clearcoatRoughness: 0.4, // anisotropia testada (0,3–0,55) escurecia os tubos nas vistas laterais — estrias via roughnessMap
   });
-  steel.envMapIntensity = steel.userData.envI = 2.0; // estrutura vertical recebe pouca luz direta (luminárias acima)
+  steel.envMapIntensity = steel.userData.envI = 1.6; // estrutura vertical recebe pouca luz direta (luminárias acima)
   const capMat = new THREE.MeshStandardMaterial({ color: new THREE.Color('#2b2d30'), roughness: 0.62, metalness: 0 });
   // prancheta: laminado melamínico bege-acinzentado + fita de borda PVC
   const formica = new THREE.MeshPhysicalMaterial({ color: 0xffffff, map: T.fmColor, roughness: 1, roughnessMap: T.fmRough, normalMap: T.fmNormal, normalScale: new THREE.Vector2(0.08, 0.08), specularIntensity: 0.6, clearcoat: 0.12, clearcoatRoughness: 0.4 });
@@ -45,44 +46,65 @@ function makeMaterials(renderer) {
 }
 
 // ------------------------------------------------------------ disposição (determinística, semente fixa)
-// Pedido do usuário: 40 carteiras = 4 filas (colunas ao longo de W) × 10 carteiras, voltadas para a parede da frente.
-// Pegada de uma carteira (local): x −0,25…+0,33 (prancheta à direita); z −0,47 (frente da prancheta)…+0,27 (encosto/pés).
-// Na altura da prancheta (0,735 m) a profundidade útil é 0,706 m: passo mínimo sem colisão = 0,706 + folga.
-const FOOT = { l: 0.25, r: 0.33, f: 0.47, b: 0.27, tabDepth: 0.706 };
-export const SEATING = { cols: 4, perCol: 10 };
-function plan({ L, W }) {
-  // laterais: 0,45 m na parede esquerda; 0,90 m na direita (faixa livre até a porta em x=+W/2, z≈+L/2−1,78)
-  const xL = -W / 2 + 0.45 + FOOT.l, xR = W / 2 - 0.90 - FOOT.r;
-  let nc = SEATING.cols; while (nc > 1 && (xR - xL) / (nc - 1) < 0.72) nc--;
-  const px = nc > 1 ? Math.min(W / 4, (xR - xL) / (nc - 1)) : 0, x0 = nc > 1 ? (xL + xR) / 2 - px * (nc - 1) / 2 : (xL + xR) / 2;
-  const cols = Array.from({ length: nc }, (_, k) => x0 + k * px);
-  // longitudinal: área do professor T (frente da 1ª prancheta) e folga do fundo B; reduz de (1,5; 0,9) até (1,2; 0,5)
-  const span = (T, B) => (L / 2 - B - FOOT.b) - (-L / 2 + T + FOOT.f);
-  const n = SEATING.perCol, need = 0.85;
-  let T = 1.5, B = 0.9;
-  for (let i = 0; i <= 20 && span(T, B) / (n - 1) < need; i++) { T = 1.5 - 0.3 * i / 20; B = 0.9 - 0.4 * i / 20; }
-  const pMin = FOOT.tabDepth + 0.035; // 3,5 cm de folga entre a prancheta e o encosto da carteira da frente
-  let nr = n; while (nr > 1 && span(T, B) / (nr - 1) < pMin) nr--;
-  const pz = nr > 1 ? Math.min(1.1, span(T, B) / (nr - 1)) : 0;
-  const zFront = -L / 2 + T + FOOT.f;
-  return { cols, px, rows: nr, pz, zFront, T, B, gap: pz - FOOT.tabDepth };
+// Pedido do usuário: 40 carteiras = 5 filas (colunas ao longo de W) × 8 carteiras, voltadas para a parede da frente;
+// as 2 filas dos cantos ENCOSTADAS nas paredes laterais (~2,5 cm), as 3 internas igualmente espaçadas entre elas.
+// Pegada de uma carteira (local, sem giro): x −0,241 (prancheta/pé esq.) … +0,333 (prancheta dir.);
+// z −0,47 (frente da prancheta) … +0,27 (encosto/pés traseiros). Profundidade na altura da prancheta: 0,706 m.
+const FOOT = { l: 0.241, r: 0.333, f: 0.47, b: 0.27, tabDepth: 0.706 };
+export const SEATING = { cols: 5, perCol: 8, wallGap: 0.025, teacher: 1.4, back: 0.6 };
+// porta: lida de room.js (getOpenings) quando a SALA exportar; senão, regra do croqui — parede ESQUERDA, no lugar da
+// janela mais próxima da parede da frente (1ª de n = round(L/2,29) janelas)
+function doorOf(room) {
+  try {
+    const o = ROOM.getOpenings?.(room), d = o && (o.door || (Array.isArray(o.doors) && o.doors[0]));
+    if (d) {
+      const z = d.z ?? d.zc ?? d.c ?? d.center ?? d.u, w = d.w ?? d.width ?? 0.84;
+      const side = d.wall ?? d.side ?? (d.x !== undefined ? (d.x < 0 ? 'left' : 'right') : 'left');
+      if (Number.isFinite(z)) return { side: /esq|left|-x/i.test(String(side)) ? 'left' : 'right', z0: z - w / 2, z1: z + w / 2 };
+    }
+  } catch { /* SALA em transição */ }
+  const { L } = room, n = Math.max(1, Math.round(L / 2.29));
+  const z = -L / 2 + 0.5 * (L / n) + 0.12 * Math.min(1, L / 9.16);
+  return { side: 'left', z0: z - 0.42, z1: z + 0.42 };
 }
-function deskSpot(room) { const { L, W } = room, { T } = plan(room); return { dx: Math.min(W / 2 - 1.0, Math.max(-W / 2 + 0.85, W * 0.25)), dz: -L / 2 + Math.max(0.85, T - 0.32) }; }
+function plan(room) {
+  const { L, W } = room, S = SEATING;
+  // colunas: extremas encostadas (folga S.wallGap até a face da parede; o rodapé avança 1,8 cm só até 5,5 cm de altura)
+  const xL = -W / 2 + S.wallGap + FOOT.l, xR = W / 2 - S.wallGap - FOOT.r;
+  let nc = S.cols; while (nc > 2 && (xR - xL) / (nc - 1) < 0.66) nc--;
+  const px = nc > 1 ? (xR - xL) / (nc - 1) : 0;
+  const cols = nc > 1 ? Array.from({ length: nc }, (_, k) => xL + k * px) : [(xL + xR) / 2];
+  // longitudinal: frente da 1ª prancheta a S.teacher da parede da frente; encosto da última a S.back do fundo
+  const zFront = -L / 2 + S.teacher + FOOT.f, zBack = L / 2 - S.back - FOOT.b;
+  const pMin = FOOT.tabDepth + 0.06;
+  const rowsFor = (z0) => { let n = S.perCol; while (n > 1 && (zBack - z0) / (n - 1) < pMin) n--; return { n, p: n > 1 ? Math.min(1.1, (zBack - z0) / (n - 1)) : 0, z0 }; };
+  const door = doorOf(room);
+  const colRows = cols.map((x, k) => {
+    // coluna junto à parede da porta: começa atrás do vão + 0,9 m livres diante da porta (faixa de x até 0,9 m)
+    const atDoor = (door.side === 'left' && k === 0) || (door.side === 'right' && k === cols.length - 1);
+    let z0 = zFront;
+    if (atDoor && door.z1 + 0.1 > z0 - FOOT.f && door.z0 - 0.1 < zBack + FOOT.b) z0 = Math.max(z0, door.z1 + 0.1 + FOOT.f);
+    return rowsFor(z0);
+  });
+  return { cols, px, colRows, zFront, zBack, door, wallCols: [0, cols.length - 1] };
+}
+function deskSpot(room) { const { L, W } = room; return { dx: Math.min(W / 2 - 1.0, Math.max(-W / 2 + 1.0, W * 0.25)), dz: -L / 2 + Math.max(0.85, SEATING.teacher - 0.32) }; }
 export function layoutChairs(room) {
   const { W } = room, rnd = mulberry(1109), P = plan(room);
-  // folga disponível limita o jitter longitudinal e o giro (canto da prancheta a ~0,4 m do eixo)
-  const zJit = Math.min(0.05, Math.max(0, (P.gap - 0.012) / 2)), maxTurn = Math.min(0.25, Math.max(0, (P.gap - 0.02) / 0.4));
-  const baseRot = Math.min(0.052, maxTurn);
   const out = [];
-  for (let r = 0; r < P.rows; r++) {
-    for (let c = 0; c < P.cols.length; c++) {
-      let x = P.cols[c] + (rnd() - 0.5) * 0.10, z = P.zFront + r * P.pz + (rnd() - 0.5) * 2 * zJit, ry = (rnd() - 0.5) * 2 * baseRot;
-      if (rnd() < 0.05 && maxTurn > baseRot) ry = (rnd() < 0.5 ? -1 : 1) * (baseRot + rnd() * (maxTurn - baseRot)); // levemente virada
-      x = Math.max(-W / 2 + 0.3, Math.min(W / 2 - 0.36, x));
+  P.cols.forEach((cx, c) => {
+    const R = P.colRows[c], wall = P.wallCols.includes(c);
+    for (let r = 0; r < R.n; r++) {
+      // jitter pequeno (±3 cm, ±3°); filas encostadas: sem giro e deslocamento só para dentro (não atravessa a parede)
+      let x = cx + (wall ? (c === 0 ? 1 : -1) * rnd() * 0.012 : (rnd() - 0.5) * 0.06);
+      const z = R.z0 + r * R.p + (rnd() - 0.5) * 0.06;
+      let ry = wall ? 0 : (rnd() - 0.5) * 0.105;
+      if (!wall && rnd() < 0.05) ry = (rnd() < 0.5 ? -1 : 1) * (0.06 + rnd() * 0.06); // levemente virada (folga ≥ 0,15 m)
       out.push({ x, z, ry, uph: false, tone: rnd(), col: c, row: r });
     }
-  }
-  // ~1 em 9 é a versão estofada (assento/encosto em tecido), sem repetir
+  });
+  void W;
+  // ~1 em 9 é a versão estofada, sem repetir
   const k = Math.max(1, Math.round(out.length / 9)), idx = new Set();
   while (idx.size < Math.min(k, out.length)) idx.add(Math.floor(rnd() * out.length));
   for (const i of idx) out[i].uph = true;

@@ -46,7 +46,7 @@ export function createStage(canvas, opts = {}) {
   renderer.localClippingEnabled = false;
 
   const scene = new THREE.Scene();
-  scene.background = new THREE.Color(0x15171a);
+  scene.background = new THREE.Color(0x1c1f23);
   const camera = new THREE.PerspectiveCamera(REF1.vfov, 16 / 9, 0.05, 80);
   camera.position.set(0, 1.5, 3);
 
@@ -62,7 +62,7 @@ export function createStage(canvas, opts = {}) {
   const env = createEnv(renderer, scene, () => room, { before: () => refl.suspend(true), after: () => refl.suspend(false) });
 
   // ---------- exposição (AE de celular travado uma vez + compensação manual) ----------
-  let K = K_PHYS, expComp = 1, aeLocked = false;
+  let K = K_PHYS, expComp = 1;
   const qsExp = parseFloat(qs.get('exp'));
   if (Number.isFinite(qsExp)) expComp = qsExp;
   const qsWb = (qs.get('wb') || '').split(',').map(Number);
@@ -89,12 +89,23 @@ export function createStage(canvas, opts = {}) {
     let acc = 0, c = 0; for (let i = 0; i < n; i++) { acc += Math.log(1e-4 + lum[i]); c++; }
     if (c < 50) return null;
     const avg = Math.exp(acc / c);
-    if (!(avg > 1e-3)) return null; // luzes apagadas / cena vazia: mantém a calibração física
-    const kae = Math.min(K_PHYS * 64, Math.max(K_PHYS / 64, AE_KEY / avg));
-    K = (kae / K_PHYS > 4 || kae / K_PHYS < 0.25) ? kae : K_PHYS;
+    if (!(avg > 1e-4)) { Kt = K_PHYS * K_UP; return null; } // luzes apagadas à noite: exposição no teto do AE (fica escuro)
+    const kae = AE_KEY / avg;
     stage.aeSuggested = kae;
+    // AE de celular com limites: a noite (luz artificial) fica na exposição FÍSICA calibrada (dimerizar escurece);
+    // de dia (sol/céu, 1000+ lx) a câmera fecha suavemente até K_PHYS/12. Compensação parcial (expoente 0,8) como num
+    // celular: dia continua parecendo mais claro que noite. Unidades fora de escala (> 30×) → AE pleno (proteção).
+    const r = kae / K_PHYS;
+    if (r > 30 || r < 1 / 30) Kt = kae;
+    else Kt = K_PHYS * Math.min(K_UP, Math.max(1 / 12, Math.pow(r, 0.8)));
+    if (Math.abs(Math.log(r)) < Math.log(1.6)) Kt = K_PHYS; // faixa morta: sala padrão à noite = calibração física exata
+    // bloom proporcional: muita área estourada (teto luminoso, manchas de sol) → bloom contido
+    let bright = 0; for (let i = 0; i < lum.length; i++) if (lum[i] * Kt > 2.0) bright++;
+    brightFrac = bright / lum.length;
     return avg;
   }
+  const K_UP = 1.25;
+  let Kt = K_PHYS, brightFrac = 0.01;
   const exposure = () => K * expComp;
 
   // ---------- tamanho / resolução dinâmica ----------
@@ -113,10 +124,38 @@ export function createStage(canvas, opts = {}) {
     applyCameraAspect();
   }
   let cur = { squash: 1 };
+  // Inset lateral (painel da UI cobrindo a esquerda): o centro óptico vai para o meio da área livre (setViewOffset),
+  // sem mudar a câmera. Ativo nas vistas de detalhe (point/top/overview/ceiling); ref1 e orbit ficam como estão.
+  let insetL = 0, insetAuto = true, insetUse = 0;
   function applyCameraAspect() {
-    const aspect = (cssW || 16) / (cssH || 9);
-    camera.aspect = aspect / (cur.squash || 1);
+    const W = cssW || 16, H = cssH || 9;
+    const L = cur.insetOK ? Math.min(insetL, W * 0.45) : 0;
+    const k = anim ? 1 : 1; void k;
+    insetUse += (L - insetUse) * (anim ? 1 : 1);
+    if (insetUse > 1) {
+      camera.aspect = (W + insetUse) / H / (cur.squash || 1);
+      camera.setViewOffset(W + insetUse, H, 0, 0, W, H);
+    } else {
+      camera.aspect = W / H / (cur.squash || 1);
+      camera.clearViewOffset();
+    }
     camera.updateProjectionMatrix();
+  }
+  function detectInset() { // painel fixo à esquerda dentro de #ui (largura 200 px..50% da tela, altura > 55%)
+    if (!insetAuto) return;
+    let L = 0;
+    try {
+      const ui = document.getElementById('ui');
+      if (ui && getComputedStyle(ui).display !== 'none') {
+        for (const el of ui.querySelectorAll(':scope > *, :scope > * > *')) {
+          const r = el.getBoundingClientRect();
+          if (r.width < 200 || r.width > innerWidth * 0.5 || r.height < innerHeight * 0.55 || r.left > 24) continue;
+          const cs = getComputedStyle(el); if (cs.visibility === 'hidden' || cs.display === 'none' || +cs.opacity < 0.2) continue;
+          L = Math.max(L, r.right);
+        }
+      }
+    } catch {}
+    if (Math.abs(L - insetL) > 8) { insetL = L; applyCameraAspect(); }
   }
 
   // ---------- vistas + animação ----------
@@ -133,6 +172,8 @@ export function createStage(canvas, opts = {}) {
     } else {
       anim = null; finishView(s);
     }
+    cur.insetOK = /^(point:|top|overview|ceiling)/.test(viewName);
+    applyCameraAspect();
     return s;
   }
   // fração de raios bloqueados entre a câmera e os alvos (ignora marcadores/luxímetro e o que está a < 0,2 m do alvo)
@@ -201,7 +242,7 @@ export function createStage(canvas, opts = {}) {
     enforceShadowBudget();
     refl.scan();
     env.refresh();
-    if (!aeLocked && expComp > 0) { meter(); }
+    meter(); // AE reavaliado a cada mudança de cena (luz natural, dimerização, sala); a exposição segue suave
     sig = env.signature();
   }
   function watch(now) {
@@ -220,6 +261,7 @@ export function createStage(canvas, opts = {}) {
     fc++; const nowMs = performance.now(); ft = (nowMs - fpsT0) / 1000;
     if (ft >= 0.5) {
       const fps = fc / ft; window.__fps = Math.round(fps); fc = 0; ft = 0; fpsT0 = nowMs;
+      detectInset();
       if (still || Number.isFinite(prLock) || bootT < 4 || anim) { lowT = highT = 0; return; }
       if (fps < 45) { lowT += 0.5; highT = 0; } else if (fps > 58) { highT += 0.5; lowT = 0; } else { lowT = highT = 0; }
       const maxPR = Math.min(devicePixelRatio || 1, DPR_MAX);
@@ -249,7 +291,9 @@ export function createStage(canvas, opts = {}) {
     frameFns.forEach((f) => { try { f(dt, t); } catch (e) { console.error('[onFrame]', e); } });
     if (frame === 2) refreshEnv();
     else if (frame > 2) watch(t);
-    if (bootT > 4 && !aeLocked) aeLocked = true; // AE travado depois que a cena assentou (dimerizar escurece de verdade)
+    // exposição segue o alvo do AE com constante de tempo de ~0,7 s (no boot e em captura 'still', direto)
+    K = (frame < 30 || still) ? Kt : K * Math.exp(Math.log(Kt / K) * Math.min(1, dt / 0.7));
+    post.bloom.strength = post.bloomBase * Math.min(1, Math.max(0.12, 0.025 / Math.max(1e-4, brightFrac)));
     const ex = exposure();
     post.pre.uniforms.exposure.value = ex;
     post.cam.uniforms.time.value = still ? 0.5 : t;
@@ -268,19 +312,20 @@ export function createStage(canvas, opts = {}) {
   const stage = {
     THREE, renderer, scene, camera, controls, canvas,
     get room() { return room; },
-    setRoom(r) { room = { ...room, ...r }; aeLocked = false; bootT = 1.5; sig = ''; if (!anim) setView(viewName, { ...viewOpts, animate: false }); },
+    setRoom(r) { room = { ...room, ...r }; bootT = 1.5; sig = ''; if (!anim) setView(viewName, { ...viewOpts, animate: false }); },
     onFrame(fn) { frameFns.push(fn); },
     setView,
     get view() { return viewName; },
     addPostPass(pass) { post.addPass(pass); return pass; },
     /** v: número = compensação linear sobre o AE calibrado (1 = padrão); 'auto' = remede o AE agora. */
     setExposure(v) {
-      if (v === 'auto') { aeLocked = false; meter(); aeLocked = true; return exposure(); }
+      if (v === 'auto') { expComp = 1; meter(); return exposure(); }
       if (Number.isFinite(+v)) expComp = Math.max(0, +v);
       return exposure();
     },
     get exposure() { return exposure(); },
     get exposureBase() { return K; },
+    get exposureTarget() { return Kt; },
     setToneMapping(name) { if (TONEMAPS[name]) { toneName = name; renderer.toneMapping = TONEMAPS[name]; } return toneName; },
     refreshEnv,
     get env() { return env; },
@@ -297,11 +342,14 @@ export function createStage(canvas, opts = {}) {
     get fx() { return post.cam.uniforms; }, // nitidez, vinheta, grão, saturação... (ajuste fino)
     get pixelRatio() { return pixelRatio; },
     get staticFrames() { return staticN; },
+    /** Área coberta pela UI à esquerda (px CSS). null = detecção automática. */
+    setInsets(o) { if (o == null) { insetAuto = true; return; } insetAuto = false; insetL = +o.left || 0; applyCameraAspect(); },
     render() { renderFrame(performance.now()); },
     REF1,
   };
 
   addEventListener('resize', resize); resize();
+  try { window.__sim?.on?.('daylight', () => { dirtyAt = 0; sigT = 0; }); } catch {}
   setView('ref1', { animate: false });
   renderer.setAnimationLoop(renderFrame);
   window.__stage = stage;

@@ -20,6 +20,7 @@ const state = {
   lum: { type: LUM_TYPES[0].id, flux: LUM_TYPES[0].flux, cct: LUM_TYPES[0].cct, on: true, dim: 1 },
   envId: defaultEnv?.id, Emin: defaultEnv?.E ?? 500, continuous: true,
   values: {}, task: [],
+  avaliacao: { periodo: 'noturno', ceu: 'nublado', atividadeNoturna: true }, valuesByCond: {},
   showPoints: false, showIsolux: false, view: 'ref1',
 };
 
@@ -30,11 +31,18 @@ const app = {
   emit(ev, d) { (listeners[ev] || []).forEach((f) => { try { f(d); } catch (e) { console.error(e); } }); },
   set(patch) {
     const prevGeom = JSON.stringify([state.room, state.config, state.N, state.M]);
+    // Leituras separadas por condição de avaliação (como as abas DIA / NOITE da planilha)
+    const prevCond = condKey();
     deepAssign(state, patch);
+    if (patch.avaliacao && condKey() !== prevCond && !('values' in patch)) {
+      state.valuesByCond[prevCond] = { ...state.values };
+      state.values = { ...(state.valuesByCond[condKey()] || {}) };
+      patch = { ...patch, values: state.values };
+    }
     if (patch.envId) { const e = QUADRO1.find((x) => x.id === patch.envId); if (e) state.Emin = e.E; }
     const geomChanged = prevGeom !== JSON.stringify([state.room, state.config, state.N, state.M]);
     if (geomChanged) { state.values = pruneValues(state.values); rebuild(); }
-    else if (patch.lum) refreshLighting();
+    else if (patch.lum || patch.avaliacao) { refreshLighting(); app.emit('daylight', state.avaliacao); }
     if ('showPoints' in patch) patch.showPoints ? identify(false) : markers?.hide();
     if ('showIsolux' in patch) isolux?.setVisible(state.showIsolux);
     if ('values' in patch && markers) markers.setValues(state.values, results().bands);
@@ -42,7 +50,7 @@ const app = {
   },
   luminaires: () => NORM.layoutLuminaires(state.room, { N: state.N, M: state.M, config: state.config }),
   points: () => NORM.measurementPoints(state.room, { N: state.N, M: state.M, config: state.config }),
-  results,
+  results, condKey,
   identify: () => identify(true),
   simulate, loadExample, setView: (v, o) => { state.view = v; stage.setView(v, o); },
   focusPoint: (id) => {
@@ -68,14 +76,18 @@ const app = {
 };
 window.__sim = app;
 
+function condKey() { return state.avaliacao.periodo === 'noturno' ? 'noturno' : `diurno-${state.avaliacao.ceu}`; }
 function deepAssign(t, s) { for (const k in s) { if (s[k] && typeof s[k] === 'object' && !Array.isArray(s[k]) && t[k] && typeof t[k] === 'object') deepAssign(t[k], s[k]); else t[k] = s[k]; } }
 function pruneValues(v) { const ids = new Set(NORM.configById(state.config).points); const o = {}; for (const k in v) if (ids.has(k)) o[k] = v[k]; return o; }
-function lumSpec() { const t = LUM_TYPES.find((x) => x.id === state.lum.type) || LUM_TYPES[0]; return { ...t, ...state.lum, config: state.config, count: state.N * state.M }; }
+function lumSpec() { const t = LUM_TYPES.find((x) => x.id === state.lum.type) || LUM_TYPES[0]; return { ...t, ...state.lum, config: state.config, count: state.N * state.M,
+  // condição da avaliação → luz natural (FOTOMETRIA: daylight 1 = céu nublado ≈10 klx; ensolarado ≈2,5×, sky='ensolarado' ativa manchas de sol)
+  period: state.avaliacao.periodo, sky: state.avaliacao.ceu,
+  daylight: state.avaliacao.periodo === 'diurno' ? (state.avaliacao.ceu === 'ensolarado' ? 2.5 : 1) : 0 }; }
 
 function results() {
   const { N, M, room } = state;
   const im = NORM.computeIM(state.config, state.values, { N, M, L: room.L, W: room.W });
-  const ev = NORM.evaluate({ E: im.E, Emin: state.Emin, values: state.values, task: state.task, continuous: state.continuous });
+  const ev = NORM.evaluate({ E: im.E, Emin: state.Emin, values: state.values, task: state.task, continuous: state.continuous, ...state.avaliacao });
   const area = room.L * room.W;
   return { ...im, ...ev, area, areaBand: [area * 0.97, area * 1.03], Emin: state.Emin, env: QUADRO1.find((e) => e.id === state.envId) };
 }
@@ -127,6 +139,7 @@ safe('ui', () => createUI(document.getElementById('ui'), app));
 // parâmetros de URL (capturas automáticas): cam, ui=0, pts=1, iso=1, ex=planilha, cfg, N, M, sim=1
 if (qs.get('ex')) loadExample(qs.get('ex'));
 ['N', 'M', 'cfg'].forEach((k) => qs.get(k) && app.set(k === 'cfg' ? { config: +qs.get(k) } : { [k]: +qs.get(k) }));
+if (qs.get('per') || qs.get('ceu')) app.set({ avaliacao: { periodo: qs.get('per') || state.avaliacao.periodo, ceu: qs.get('ceu') || state.avaliacao.ceu } });
 if (qs.get('sim') === '1') simulate();
 if (qs.get('pts') === '1') app.set({ showPoints: true });
 if (qs.get('iso') === '1') app.set({ showIsolux: true });

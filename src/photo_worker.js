@@ -16,7 +16,7 @@ self.onmessage = (ev) => {
     const t0 = performance.now();
     const g = computeGrid(m.lums, m.room, m.spec, 0.25, { nx: m.nx, nz: m.nz });
     const t1 = performance.now();
-    const rgba = colorizeGrid(g, m.cw, m.ch, anchoredRange(g.Emax, m.Ereq));
+    const rgba = colorizeGrid(g, m.cw, m.ch, anchoredRange(g.Emax, m.Ereq, g.Emin));
     self.postMessage({ type: 'grid', seq: m.seq, grid: g, rgba, cw: m.cw, ch: m.ch, range: rgba.range, ms: [t1 - t0, performance.now() - t1] }, [g.E.buffer, rgba.data.buffer]);
   } catch (e) { self.postMessage({ type: 'grid', seq: m.seq, error: String(e && e.stack || e) }); }
 };

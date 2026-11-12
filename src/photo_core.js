@@ -36,18 +36,83 @@ export const REFLECT = { ceiling: 0.80, walls: 0.70, floor: 0.30 };
 export let MF = 0.80; // fator de manutenção (live binding: use setMF)
 export const LUMINOUS_CEILING_RHO = 0.60; // refletância do difusor do teto luminoso (config 6)
 /** Aberturas nas paredes (refletância própria, mistura por área nos patches). Posições ao longo da parede como fração de L
- *  (0 = parede do fundo z=−L/2), conforme o croqui: 4 janelas na parede esquerda (x=−W/2), 3 janelas + porta na direita.
- *  Janelas basculantes à noite (vidro + grade, exterior escuro): ρ ≈ 0,10. Porta de painel: ρ ≈ 0,50. */
-export const OPENINGS = [
-  ...[0.133, 0.389, 0.642, 0.892].map((f) => ({ kind: 'janela', wall: 'left', at: f, w: 1.0, y0: 1.10, y1: 2.10, rho: 0.10 })),
-  ...[0.157, 0.404, 0.647].map((f) => ({ kind: 'janela', wall: 'right', at: f, w: 1.0, y0: 1.10, y1: 2.10, rho: 0.10 })),
-  { kind: 'porta', wall: 'right', at: 0.815, w: 0.90, y0: 0, y1: 2.10, rho: 0.50 },
+ *  (0 = parede do fundo z=−L/2). Disposição pedida pelo usuário: esquerda (x=−W/2) porta junto à frente + 3 janelas; direita 4 janelas.
+ *  Janelas de correr à noite (vidro + grade, exterior escuro): ρ ≈ 0,10. Porta de painel: ρ ≈ 0,50. */
+export const OPENINGS = [ // disposição atual (pedido do usuário): esquerda = porta (frente) + 3 janelas; direita = 4 janelas
+  { kind: 'porta', wall: 'left', at: 0.133, w: 0.90, y0: 0, y1: 2.10, rho: 0.50 },
+  ...[0.389, 0.642, 0.892].map((f) => ({ kind: 'janela', wall: 'left', at: f, w: 1.30, y0: 1.25, y1: 2.20, rho: 0.10 })),
+  ...[0.157, 0.404, 0.647, 0.815].map((f) => ({ kind: 'janela', wall: 'right', at: f, w: 1.30, y0: 1.25, y1: 2.20, rho: 0.10 })),
 ];
+/** Converte a lista de aberturas da SALA (room.getOpenings(room), formato tolerante: {kind|type, wall, at | z | x | center,
+ *  w | width, y0 | sill, y1 | h | height}) para o formato de OPENINGS. Retorna null se não reconhecer. */
+export function openingsFromRoom(list, room) {
+  if (!Array.isArray(list) || !list.length) return null;
+  const wallMap = { left: 'left', esquerda: 'left', right: 'right', direita: 'right', back: 'back', fundo: 'back', front: 'front', frente: 'front', entrada: 'front' };
+  const out = [];
+  for (const o of list) {
+    const wall = wallMap[String(o.wall || o.parede || '').toLowerCase()];
+    const kind = /porta|door/i.test(o.kind || o.type || o.tipo || '') ? 'porta' : 'janela';
+    const side = wall === 'left' || wall === 'right', span = side ? room.L : room.W;
+    const c = o.at != null ? -span / 2 + o.at * span : +(side ? (o.z ?? o.center ?? o.c) : (o.x ?? o.center ?? o.c));
+    const w = +(o.w ?? o.width ?? o.largura), y0 = +(o.y0 ?? o.sill ?? o.peitoril ?? (kind === 'porta' ? 0 : NaN));
+    const y1 = +(o.y1 ?? (y0 + +(o.h ?? o.height ?? o.altura)));
+    if (!wall || ![c, w, y0, y1].every(Number.isFinite)) return null;
+    out.push({ kind, wall, at: (c + span / 2) / span, w, y0, y1, rho: kind === 'porta' ? 0.50 : 0.10 });
+  }
+  return out;
+}
 /** Luz natural (spec.daylight 0..1): janelas como fontes difusas. Exitância transmitida pela janela =
  *  daylight · extLux · vertRatio · tau  (céu encoberto CIE: E_vertical ≈ 0,40·E_horizontal; vidro 0,80 × caixilho/grade 0,78).
  *  extLux padrão 10 000 lx (dia nublado típico); spec.daylightLux sobrepõe. A NHO-11 manda avaliar na condição mais
  *  desfavorável — à noite (daylight = 0, padrão). */
 export const DAYLIGHT = { extLux: 10000, vertRatio: 0.40, tau: 0.62 };
+/** Sol direto (céu ensolarado): manhã, sol entrando pelas janelas da parede x = −W/2. alt = altitude solar, az = desvio
+ *  horizontal do raio em relação à normal da parede (para +z), Edn = iluminância direta normal (céu claro, alt 35° ≈ 70 klx),
+ *  tau = vidro 0,80 × caixilho/grade 0,78. Escala com spec.daylight/2,5. */
+export const SUN = { alt: 35, az: 20, Edn: 70000, tau: 0.62, wall: 'left' };
+/** Condição de avaliação normalizada a partir do spec: {day, sunny, daylight}. period 'noturno' ⇒ sem luz natural. */
+export function skyCondition(spec = {}) {
+  const night = spec.period === 'noturno';
+  let dl = night ? 0 : (spec.daylight != null ? Math.max(0, +spec.daylight || 0) : (spec.period === 'diurno' ? (spec.sky === 'ensolarado' ? 2.5 : 1) : 0));
+  const sunny = dl > 0 && (spec.sky ? spec.sky === 'ensolarado' : dl >= 2);
+  return { day: dl > 0, sunny, daylight: dl, label: dl > 0 ? `Diurna · ${sunny ? 'ensolarado' : 'nublado'}` : 'Noturna' };
+}
+function sunDir() { const a = SUN.alt * Math.PI / 180, b = SUN.az * Math.PI / 180; return [Math.cos(a) * Math.cos(b), -Math.sin(a), Math.cos(a) * Math.sin(b)]; }
+function sunWindows(room) {
+  return OPENINGS.filter((o) => o.kind === 'janela' && o.wall === SUN.wall).map((o) => { const c = -room.L / 2 + o.at * room.L; return { z0: c - o.w / 2, z1: c + o.w / 2, y0: o.y0, y1: Math.min(o.y1, room.H) }; });
+}
+/** Iluminância do sol direto (lux) num ponto com normal n, se o raio para o sol passa por uma janela (sem sombra de móveis). */
+function sunAt(px, py, pz, nx, ny, nz, room, Esun) {
+  if (!(Esun > 0)) return 0; const d = sunDir(); const cosI = -(nx * d[0] + ny * d[1] + nz * d[2]); if (cosI <= 0) return 0;
+  const t = (px + room.W / 2) / d[0]; if (t < 0) return 0;
+  const qy = py - t * d[1], qz = pz - t * d[2];
+  for (const w of sunWindows(room)) if (qy > w.y0 && qy < w.y1 && qz > w.z0 && qz < w.z1) return Esun * cosI;
+  return 0;
+}
+const sunE = (spec) => { const c = skyCondition(spec); return c.sunny ? SUN.Edn * SUN.tau * (c.daylight / 2.5) : 0; };
+/**
+ * Manchas de sol no plano horizontal y (padrão: plano de trabalho) — polígonos [[x,z],…] recortados pela sala, com a
+ * iluminância horizontal dentro da mancha (E, lux). Para LUMINÁRIAS/RENDER desenharem (use y=0 para o piso). [] se não houver sol.
+ */
+export function sunPatches(room, spec, y = room.plane ?? 0.75) {
+  const Es = sunE(spec || {}); if (!(Es > 0)) return [];
+  const d = sunDir(), out = [], Eh = Es * -d[1];
+  for (const w of sunWindows(room)) {
+    if (w.y1 <= y) continue; const y0 = Math.max(w.y0, y + 1e-6);
+    const proj = (wy, wz) => { const t = (wy - y) / -d[1]; return [-room.W / 2 + t * d[0], wz + t * d[2]]; };
+    let poly = [proj(y0, w.z0), proj(y0, w.z1), proj(w.y1, w.z1), proj(w.y1, w.z0)];
+    for (const [ax, lim, sg] of [[0, room.W / 2, 1], [0, -room.W / 2, -1], [1, room.L / 2, 1], [1, -room.L / 2, -1]]) poly = clipPoly(poly, ax, lim, sg);
+    if (poly.length >= 3) out.push({ pts: poly, y, E: Eh });
+  }
+  return out;
+}
+function clipPoly(P, ax, lim, sg) { // mantém sg·p[ax] ≤ sg·lim
+  const out = [], inside = (p) => sg * p[ax] <= sg * lim + 1e-9;
+  for (let i = 0; i < P.length; i++) { const a = P[i], b = P[(i + 1) % P.length], ia = inside(a), ib = inside(b);
+    if (ia) out.push(a);
+    if (ia !== ib) { const t = (lim - a[ax]) / (b[ax] - a[ax]); out.push([a[0] + t * (b[0] - a[0]), a[1] + t * (b[1] - a[1])]); } }
+  return out;
+}
 let version = 0;
 /** Substitui as aberturas (lista no formato de OPENINGS; [] = paredes contínuas). */
 export function setOpenings(list = []) { OPENINGS.length = 0; OPENINGS.push(...list); version++; }
@@ -237,7 +302,7 @@ let last = { lums: null, room: null, spec: null, ver: -1, S: null };
 function solKey(lums, room, spec) {
   const t = resolveType(spec);
   return [room.L, room.W, room.H, t.id, t.dist, t.phiC, t.flux, t.lor, t.dim ?? 1, t.on !== false, t.config, t.mf ?? MF, t.lenM, t.widM, t.drop, t.lines,
-    t.config === 6 && !lums.length ? luminousCount(t) : '', REFLECT.ceiling, REFLECT.walls, REFLECT.floor, version, OPENINGS.length, +t.daylight || 0, t.daylightLux || '',
+    t.config === 6 && !lums.length ? luminousCount(t) : '', REFLECT.ceiling, REFLECT.walls, REFLECT.floor, version, OPENINGS.length, +t.daylight || 0, t.daylightLux || '', t.period || '', t.sky || '', SUN.alt, SUN.az,
     t.lumFactors ? JSON.stringify(t.lumFactors) : '',
     lums.map((l) => `${(+l.x).toFixed(3)},${(+l.z).toFixed(3)},${(+l.len).toFixed(3)},${l.axis}`).join(';')].join('|');
 }
@@ -249,8 +314,9 @@ export function solve(lums, room, spec) {
     const t0 = now(), t = resolveType(spec), G = geometry(room), { P, n, F } = G;
     const EL = buildElements(lums, room, t);
     const luminous = !lums.length && t.config === 6 && t.on !== false;
-    const Mday = Math.max(0, +t.daylight || 0) * (+t.daylightLux || DAYLIGHT.extLux) * DAYLIGHT.vertRatio * DAYLIGHT.tau;
-    let daylit = false;
+    const cond = skyCondition(t);
+    const Mday = cond.daylight * (+t.daylightLux || DAYLIGHT.extLux) * DAYLIGHT.vertRatio * DAYLIGHT.tau;
+    let daylit = false; const Esun = sunE(t);
     const rho = new Float64Array(n), Em = new Float64Array(n), E0 = new Float64Array(n);
     let fluxSurf = 0, daylightFlux = 0;
     for (let i = 0; i < n; i++) {
@@ -270,6 +336,24 @@ export function solve(lums, room, spec) {
       if (luminous && p.surf === 'ceiling') Em[i] = emittedFlux(t) * luminousCount(t) / (room.L * room.W);
       if (Em[i]) daylightFlux += p.surf === 'wall' ? Em[i] * p.area : 0;
     }
+    // sol direto: raios amostrados nas janelas iluminadas até a 1ª superfície (piso, parede oposta ou de topo)
+    let sunFlux = 0;
+    if (Esun > 0) {
+      const d = sunDir(), ns = 10, Wh = room.W / 2, Lh = room.L / 2;
+      for (const w of sunWindows(room)) {
+        const fl = Esun * d[0] * (w.z1 - w.z0) * (w.y1 - w.y0) / (ns * ns); // fluxo por raio (irradiância no plano da janela × área)
+        for (let a = 0; a < ns; a++) for (let b = 0; b < ns; b++) {
+          const wy = w.y0 + (w.y1 - w.y0) * (a + 0.5) / ns, wz = w.z0 + (w.z1 - w.z0) * (b + 0.5) / ns;
+          const tf = wy / -d[1], tr = room.W / d[0], tz = d[2] > 0 ? (Lh - wz) / d[2] : d[2] < 0 ? (-Lh - wz) / d[2] : Infinity;
+          const tt = Math.min(tf, tr, tz), hx = -Wh + tt * d[0], hy = wy + tt * d[1], hz = wz + tt * d[2];
+          const surfHit = tt === tf ? 'floor' : 'wall';
+          for (let i = 0; i < n; i++) { const p = P[i]; if (p.surf !== surfHit) continue;
+            if (hx >= p.lo[0] - 1e-6 && hx <= p.hi[0] + 1e-6 && hy >= p.lo[1] - 1e-6 && hy <= p.hi[1] + 1e-6 && hz >= p.lo[2] - 1e-6 && hz <= p.hi[2] + 1e-6) {
+              E0[i] += fl / p.area; sunFlux += fl; break; } }
+        }
+      }
+      if (sunFlux > 0) daylit = true;
+    }
     // Gauss–Seidel: B_i = Em_i + ρ_i·(E0_i + Σ_j F_ij·B_j)
     const B = new Float64Array(n); for (let i = 0; i < n; i++) B[i] = Em[i] + rho[i] * E0[i];
     let it = 0, delta = 1;
@@ -282,7 +366,7 @@ export function solve(lums, room, spec) {
       delta /= maxB;
     }
     const emitted = EL.n ? emittedFlux(t) * lums.length : (luminous ? emittedFlux(t) * luminousCount(t) : 0);
-    S = { EL, G, B, rho, E0, Em, iterations: it, emitted, fluxSurf, daylightFlux, ms: now() - t0, luminous, daylit, plane: room.plane ?? 0.75 };
+    S = { EL, G, B, rho, E0, Em, iterations: it, emitted, fluxSurf, daylightFlux, sunFlux, Esun, cond, room: { L: room.L, W: room.W, H: room.H }, ms: now() - t0, luminous, daylit, plane: room.plane ?? 0.75 };
     if (solCache.size > 12) solCache.delete(solCache.keys().next().value);
     solCache.set(key, S);
   }
@@ -327,17 +411,19 @@ function indirectAt(px, py, pz, S) {
 /** Iluminância horizontal (lux) num ponto (x, y, z): direta + indireta (radiosidade). */
 export function illuminanceAt(x, y, z, lums, room, spec) {
   if (!room || !(room.H > y)) return 0;
-  if (spec?.on === false && !(spec.daylight > 0)) return 0;
+  if (spec?.on === false && !skyCondition(spec).day) return 0;
   const S = solve(lums || [], room, spec || {});
   if (!S.EL.n && !S.luminous && !S.daylit) return 0;
-  return directAt(x, y, z, 0, 1, 0, S.EL) + indirectAt(x, y, z, S);
+  return directAt(x, y, z, 0, 1, 0, S.EL) + indirectAt(x, y, z, S) + sunAt(x, y, z, 0, 1, 0, room, S.Esun);
 }
 /** Componentes separadas {direct, indirect, total} — útil para o painel didático. */
 export function illuminanceParts(x, y, z, lums, room, spec) {
-  if (spec?.on === false && !(spec.daylight > 0)) return { direct: 0, indirect: 0, total: 0 };
+  if (spec?.on === false && !skyCondition(spec).day) return { direct: 0, indirect: 0, sun: 0, total: 0 };
   const S = solve(lums || [], room, spec || {});
   const d = S.EL.n ? directAt(x, y, z, 0, 1, 0, S.EL) : 0, i = (S.EL.n || S.luminous || S.daylit) ? indirectAt(x, y, z, S) : 0;
-  return { direct: d, indirect: i, total: d + i };
+  const sn = sunAt(x, y, z, 0, 1, 0, room, S.Esun);
+  if (sn) return { direct: d, indirect: i, sun: sn, total: d + i + sn };
+  return { direct: d, indirect: i, sun: 0, total: d + i };
 }
 
 /**
@@ -350,9 +436,9 @@ export function computeGrid(lums, room, spec, step = 0.25, opts = {}) {
   const xs = Array.from({ length: nx }, (_, i) => -room.W / 2 + (i + 0.5) * room.W / nx);
   const zs = Array.from({ length: nz }, (_, j) => -room.L / 2 + (j + 0.5) * room.L / nz);
   const E = new Float32Array(nx * nz); let mn = Infinity, mx = -Infinity, s = 0;
-  const on = spec?.on !== false || spec?.daylight > 0, S = on ? solve(lums || [], room, spec || {}) : null, lit = S && (S.EL.n || S.luminous || S.daylit);
+  const on = spec?.on !== false || skyCondition(spec || {}).day, S = on ? solve(lums || [], room, spec || {}) : null, lit = S && (S.EL.n || S.luminous || S.daylit);
   for (let j = 0; j < nz; j++) for (let i = 0; i < nx; i++) {
-    const e = lit ? directAt(xs[i], y, zs[j], 0, 1, 0, S.EL) + indirectAt(xs[i], y, zs[j], S) : 0;
+    const e = lit ? directAt(xs[i], y, zs[j], 0, 1, 0, S.EL) + indirectAt(xs[i], y, zs[j], S) + sunAt(xs[i], y, zs[j], 0, 1, 0, room, S.Esun) : 0;
     E[j * nx + i] = e; if (e < mn) mn = e; if (e > mx) mx = e; s += e;
   }
   const Emed = s / (nx * nz);

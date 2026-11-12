@@ -14,11 +14,13 @@ import * as THREE from 'three';
 import * as PH from './photometry.js';
 import { cctColor } from './lum_color.js';
 import { makeMaterials, lumModel, luminousCeiling } from './lum_models.js';
+import { buildDaylight } from './lum_daylight.js';
 
 const UP_FRAC = { tube: 0.075, tube2: 0.06, louver: 0.02, panel: 0 };   // fração do fluxo emitido para cima/lados
 const SHADOW_FRAC = 0.55;          // fração da luz direta transportada pelas luzes com sombra
 // teto luminoso ≡ spec.count, senão N×M do app, senão 8 luminárias (mesma regra de photometry)
 const luminousCount = (spec) => (isFinite(spec.count) ? +spec.count : (globalThis.__sim?.state?.N * globalThis.__sim?.state?.M) || 8);
+const LUMINOUS_DISPLAY = 0.95;     // luminância exibida máx. do teto luminoso × exposição (bloom do RENDER começa em ~2,0)
 const EMIT_MAX = 24000;           // nit — teto de radiância emissiva (half-float)
 const SKY = 1.08, GROUND = 0.80;   // repartição direcional da indireta (teto+paredes → piso; piso → teto)
 
@@ -35,6 +37,9 @@ export function buildLuminaires(stage) {
   group.add(bodies, lights);
   const M = makeMaterials();
   const hemi = new THREE.HemisphereLight(0xffffff, 0xffffff, 0); hemi.name = 'lum-indirect'; hemi.position.set(0, 1, 0); group.add(hemi);
+  // luz natural (janelas + sol) — ver lum_daylight.js
+  let day = null;
+  try { day = buildDaylight(stage, group, { mapSize: media ? 1024 : 2048 }); } catch (e) { console.warn('[luminarias] luz natural indisponível', e); }
 
   const col = new THREE.Color(1, 1, 1);
   const st = {
@@ -124,7 +129,8 @@ export function buildLuminaires(stage) {
   function calibrate(list, room, spec) {
     try {
       if (typeof PH.solve !== 'function' || spec.on === false || !(spec.dim ?? 1)) return calibCache;
-      const S = PH.solve(list, room, spec); if (!S?.G?.P || !(S.emitted > 0)) return calibCache;
+      // só as luminárias (sem luz natural) → razões por lúmen das luminárias
+      const S = PH.solve(list, room, { ...spec, daylight: 0, period: 'noturno' }); if (!S?.G?.P || !(S.emitted > 0)) return calibCache;
       const acc = { ceiling: [0, 0, 0], floor: [0, 0, 0], wall: [0, 0, 0] };
       S.G.P.forEach((p, i) => {
         const k = p.surf === 'ceiling' ? 'ceiling' : p.surf === 'floor' ? 'floor' : 'wall', r = S.rho[i];
@@ -163,7 +169,7 @@ export function buildLuminaires(stage) {
         addRect(Fl * (1 - SHADOW_FRAC) / (nx * nz), w / nx, l / nz, cx, yE, cz, false);
         shadowPts.push({ x: cx, z: cz, w: Fl * SHADOW_FRAC / (nx * nz) });
       }
-      L.tile = Fl / (Math.PI * w * l) / 0.93; L.tProfile = L.tile * 0.05;
+      L.lumTile = Fl / (Math.PI * w * l) / 0.93; L.tProfile = L.lumTile * 0.05;
       shadowPts.y = yE - 0.01;
     } else if (list.length) {
       const kind = spec.kind || 'tube';
@@ -208,7 +214,9 @@ export function buildLuminaires(stage) {
       }
     }
     // luzes com sombra (sombras suaves das cadeiras/mesas) — 1 a 4, nos centros dos aglomerados
-    for (const c of clusters(shadowPts, maxShadows)) addSpot(c.w, c.x, shadowPts.y, c.z, room);
+    // com sol, o DirectionalLight do sol usa 1 dos 4 mapas de sombra do orçamento do RENDER
+    const sunnyNow = !!(day && PH.skyCondition?.(spec)?.sunny);
+    for (const c of clusters(shadowPts, Math.max(1, maxShadows - (sunnyNow ? 1 : 0)))) addSpot(c.w, c.x, shadowPts.y, c.z, room);
 
     // componente indireta (fluxo médio, refletâncias de photometry.REFLECT)
     const cal = luminous ? calibrate(list, room, spec) : calibCache;
@@ -222,6 +230,7 @@ export function buildLuminaires(stage) {
     }
 
     if (!st.inited) { st.inited = true; st.level = spec.on === false ? 0 : 1; st.on = spec.on !== false; }
+    if (day) { try { day.update(room, spec); if (!st.dayInit || still) { st.dayInit = true; day.step(0, true); } } catch (e) { console.warn('[luminarias] luz natural', e); } }
     apply();
   }
   const l0len = (list) => list[0]?.len ?? 1.24;
@@ -239,7 +248,11 @@ export function buildLuminaires(stage) {
       // teto de radiância: os alvos HDR do RENDER são half-float (máx. 65504) — o pico da textura × intensidade
       // passando disso vira Inf → NaN no PMREM/bloom (tela branca). O tubo continua estourado (≫ exposição·nit).
       const peak = m.emissiveMap?.userData?.peak ?? 1;
-      m.emissiveIntensity = Math.min((L[k] || 0) * eff, EMIT_MAX / peak);
+      let cap = EMIT_MAX / peak;
+      // teto luminoso: superfície enorme — fica branca-luminosa, logo acima das paredes, mas ABAIXO do limiar do bloom
+      // do RENDER (≈2,0 após a exposição): exibido ≤ LUMINOUS_DISPLAY/exposição. A luz na cena (RectAreaLights) é a física.
+      if ((k === 'lumTile' || k === 'tProfile') && stage.exposure > 0) cap = Math.min(cap, LUMINOUS_DISPLAY / stage.exposure * (k === 'tProfile' ? 0.05 : 1));
+      m.emissiveIntensity = Math.min((L[k] || 0) * eff, cap * Math.min(1, eff));
     }
     M.glow.uniforms.uL.value = (L.glow || 0) * eff; M.glow.uniforms.uColor.value.copy(col);
     // tubo apagado: policarbonato leitoso cinza (sem emissão), aceso: quase branco
@@ -262,6 +275,8 @@ export function buildLuminaires(stage) {
       dirty = true;
     }
     if (Math.abs(st.dimCur - st.dim) > 1e-4) { st.dimCur += (st.dim - st.dimCur) * Math.min(1, dt * 10); if (Math.abs(st.dimCur - st.dim) < 1e-3) st.dimCur = st.dim; dirty = true; }
+    if (day) day.step(dt, still);
+    const ex = stage.exposure; if (ex > 0 && Math.abs(ex - (st.expSeen || 0)) > 0.03 * ex) { st.expSeen = ex; dirty = true; }
     const envNow = !!(scene.environment && (scene.environmentIntensity ?? 1) > 0);
     if (envNow !== st.envSeen) { st.envSeen = envNow; dirty = true; }
     if (dirty) apply();

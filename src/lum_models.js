@@ -111,6 +111,16 @@ export function makeMaterials() {
   M.tubeLed.emissiveMap = ledDotsTex(118);
   M.diffuser.emissiveMap = panelDiffuserTex();
   M.lumTile.emissiveMap = luminousTileTex();
+  // leve gradiente global do teto luminoso: ~10 % mais escuro junto às paredes (borda do retroiluminado)
+  M.lumTile.userData.half = { value: new THREE.Vector2(3, 4.6) };
+  M.lumTile.onBeforeCompile = (sh) => {
+    sh.uniforms.uLumHalf = M.lumTile.userData.half;
+    sh.vertexShader = sh.vertexShader.replace('#include <common>', '#include <common>\nvarying vec2 vLumW;')
+      .replace('#include <project_vertex>', '#include <project_vertex>\nvLumW = (modelMatrix * vec4(transformed, 1.0)).xz;');
+    sh.fragmentShader = sh.fragmentShader.replace('#include <common>', '#include <common>\nvarying vec2 vLumW; uniform vec2 uLumHalf;')
+      .replace('#include <emissivemap_fragment>', '#include <emissivemap_fragment>\n{ vec2 q = abs(vLumW) / uLumHalf; float r = length(q * vec2(0.8, 0.8)); totalEmissiveRadiance *= 1.0 - 0.11 * smoothstep(0.35, 1.05, r); }');
+  };
+  M.lumTile.customProgramCacheKey = () => 'lumTileGrad';
   return M;
 }
 
@@ -269,6 +279,7 @@ export function luminousCeiling(W, L, M, margin = 0.0) {
   for (let i = 0; i <= nx; i++) { const b = new THREE.BoxGeometry(0.024, 0.030, l); b.translate(-w / 2 + i * dx, -0.008, 0); bars.push(b); }
   for (let j = 0; j <= nz; j++) { const b = new THREE.BoxGeometry(w, 0.030, 0.024); b.translate(0, -0.0085, -l / 2 + j * dz); bars.push(b); }
   g.add(mesh(mergeGeometries(bars), M.tProfile));
+  M.lumTile.userData.half?.value.set(w / 2, l / 2);
   g.userData = { kind: 'luminous', w, l, nx, nz, y: -0.020 };
   return g;
 }

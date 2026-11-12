@@ -51,8 +51,11 @@ export function viewSpec(name, o, room, aspect) {
     return { pos: V(0, plane + d, 0.0005), target: V(0, plane, 0), fov, squash: 1, inside: false, rotate: false, cut: true, top: true };
   }
   if (name === 'ceiling') {
-    const pos = V(0, 0.55, L / 2 - 0.25);
-    return { pos, target: V(0, H, -L * 0.18), fov: 74, squash: 1, inside: true, rotate: true };
+    // de pé junto à parede de entrada, acima dos encostos, olhando o forro inteiro (marcas + luminárias)
+    // (x deslocado do eixo central para não ficar sob os prumos de Q1/Q3)
+    const x0 = Math.min(0.55, W / 2 - 0.4);
+    const pos = V(x0, Math.min(1.5, H - 0.6), L / 2 - 0.3);
+    return { pos, target: V(x0 * 0.3, H, L / 2 - 0.3 - Math.min(L * 0.3, 2.5)), fov: 84, squash: 1, inside: true, rotate: true };
   }
   if (name.startsWith('point:')) {
     const id = name.slice(6);
@@ -62,27 +65,29 @@ export function viewSpec(name, o, room, aspect) {
     // 3/4 que mostra a marca no teto, o prumo e o luxímetro (tripé, fotocélula a 0,75 m) com o visor legível.
     // Candidatos em volta do ponto (a cada 20°), a ~1,7 m, dentro da sala; escolhe o de menor oclusão (raycast contra a
     // cena: cadeiras/paredes entre a câmera e o luxímetro/teto) e com preferência por olhar a partir do centro da sala.
-    const m = 0.3, camY = Math.min(H - 0.45, 1.95);
+    const m = 0.3, camY = Math.min(H - 0.5, 1.62), aimY = Math.min(1.1, plane + 0.4);
     const toC = Math.atan2(-p.x, -p.z);
     let best = null;
-    for (let k = 0; k < 18; k++) {
-      const a = (k / 18) * Math.PI * 2;
-      for (const dist of [1.5, 1.3, 1.1]) {
+    for (let k = 0; k < 24; k++) {
+      const a = (k / 24) * Math.PI * 2;
+      for (const dist of [2.2, 1.95, 1.7, 1.45]) {
         const cx = p.x + Math.sin(a) * dist, cz = p.z + Math.cos(a) * dist;
         if (Math.abs(cx) > W / 2 - m || Math.abs(cz) > L / 2 - m) continue;
-        let da = Math.abs(Math.atan2(Math.sin(a - toC), Math.cos(a - toC)));
-        let score = Math.abs(da - 0.6) * 0.6 + (1.5 - dist) * 1.0;
-        if (o.occluded) score += o.occluded(V(cx, camY, cz), [V(p.x, plane + 0.03, p.z), V(p.x, plane - 0.08, p.z), V(p.x + 0.06, plane - 0.02, p.z), V(p.x, H - 0.02, p.z)]) * 4;
+        const da = Math.abs(Math.atan2(Math.sin(a - toC), Math.cos(a - toC)));
+        let score = Math.abs(da - 0.6) * 0.5 + (2.2 - dist) * 0.9;
+        if (o.occluded) score += o.occluded(V(cx, camY, cz), [V(p.x, plane + 0.03, p.z), V(p.x, plane - 0.1, p.z), V(p.x + 0.07, plane - 0.02, p.z), V(p.x, plane - 0.4, p.z), V(p.x, H - 0.02, p.z)]) * 4;
         if (!best || score < best.score) best = { score, cx, cz, dist };
-        if (!o.occluded || score < 1.2) break;
+        if (!o.occluded || score < 1.0) break;
       }
     }
     if (!best) best = { cx: Math.max(-W / 2 + m, Math.min(W / 2 - m, p.x + 0.8)), cz: Math.max(-L / 2 + m, Math.min(L / 2 - m, p.z + 0.8)), dist: 1.1 };
     const dist = Math.max(0.8, Math.hypot(best.cx - p.x, best.cz - p.z));
-    // eixo óptico na bissetriz entre a marca do teto e o pé do tripé: frustum justo (FOV menor → visor maior)
-    const aUp = Math.atan2(H + 0.07 - camY, dist), aDn = Math.atan2(plane - 0.3 - camY, dist);
-    const mid = (aUp + aDn) / 2, ty = camY + dist * Math.tan(mid);
-    const fov = Math.min(84, Math.max(46, ((aUp - aDn) / D2R) * 1.04 + 3));
+    // mira em ~1,1 m (entre o visor e a marca do teto): luxímetro inteiro no terço central-inferior; o FOV abre só o
+    // necessário para a marca do teto entrar no topo (limite 82°).
+    const ty = aimY;
+    const aAim = Math.atan2(ty - camY, dist), aUp = Math.atan2(H + 0.08 - camY, dist), aDn = Math.atan2(-0.05 - camY, dist);
+    const half = Math.max(aUp - aAim, aAim - aDn);
+    const fov = Math.min(82, Math.max(50, (2 * half) / D2R + 2));
     return { pos: V(best.cx, camY, best.cz), target: V(p.x, ty, p.z), fov, squash: 1, inside: true, rotate: true, focus: p };
   }
   if (name === 'orbit') {

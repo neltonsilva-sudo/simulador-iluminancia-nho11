@@ -48,6 +48,21 @@ function makeMaterials() {
   };
   M.wall.onBeforeCompile = (sh) => { sh.fragmentShader = sh.fragmentShader.replace('#include <roughnessmap_fragment>', '#include <roughnessmap_fragment>\n#ifdef USE_COLOR_ALPHA\n roughnessFactor = clamp(roughnessFactor * vColor.a, 0.04, 1.0);\n#endif'); };
   M.wall.customProgramCacheKey = () => 'room.wall.rA';
+  // vista pelas janelas (noite / nublado / ensolarado) — sem luzes; valores em unidades pós-exposição (÷ exposição do RENDER)
+  const extMat = (tN, gN) => new THREE.ShaderMaterial({
+    name: 'room.exteriorView',
+    uniforms: { tN: { value: tN }, tC: { value: TX.exteriorCloudTexture() }, tS: { value: TX.exteriorSunTexture() }, w: { value: new THREE.Vector3(1, 0, 0) }, g: { value: new THREE.Vector3(gN, 1.25, 1.6) }, invExp: { value: 1 } },
+    vertexShader: 'varying vec2 vUv; void main(){ vUv = uv; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }',
+    fragmentShader: `uniform sampler2D tN, tC, tS; uniform vec3 w, g; uniform float invExp; varying vec2 vUv;
+      void main(){ vec3 c = texture2D(tN, vUv).rgb * (w.x * g.x) + texture2D(tC, vUv).rgb * (w.y * g.y) + texture2D(tS, vUv).rgb * (w.z * g.z);
+        gl_FragColor = vec4(c * invExp, 1.0);
+        #include <colorspace_fragment>
+      }`,
+  });
+  M.extL = extMat(TX.nightTexture(), 1.0);     // parede x=−W/2 (lado do sol)
+  M.extR = extMat(TX.exteriorTexture(), 0.16); // parede x=+W/2 (à noite: muro externo fracamente iluminado pela sala)
+  M.extR.uniforms.g.value.z = 1.15;            // lado da sombra no dia ensolarado
+  M.filmL = M.film.clone(); M.filmL.name = 'room.filmL'; M.filmR = M.film.clone(); M.filmR.name = 'room.filmR';
   for (let v = 0; v < 4; v++) M['poster' + v] = new THREE.MeshPhysicalMaterial({ name: 'room.poster' + v, map: TX.posterTexture(v), roughness: 0.38, clearcoat: 0.5, clearcoatRoughness: 0.12 });
   return M;
 }
@@ -93,24 +108,30 @@ function quadGeo(p0, p1, p2, p3, nrm, c, uvs) {
   g.setIndex(flip ? [0, 2, 1, 0, 3, 2] : [0, 1, 2, 0, 2, 3]); return g;
 }
 
-// ---------- layout (croqui) ----------
+// ---------- layout (croqui do usuário + pedido: porta no lugar da 1ª janela da parede esquerda) ----------
+// Parede esquerda (x=−W/2): n janelas regulares; a mais próxima de z=−L/2 vira a PORTA. Parede direita (x=+W/2): n janelas.
 function layoutOpenings(L) {
   const n = Math.max(1, Math.round(L / 2.29));
-  const zl = Array.from({ length: n }, (_, i) => -L / 2 + (i + 0.5) * (L / n) + 0.12 * Math.min(1, L / 9.16));
-  // parede direita: mesmas janelas deslocadas (+0,33 m) e porta perto de z=+L/2 (1,78 m do canto no croqui)
-  const doorC = Math.max(-L / 2 + DOOR_W / 2 + 0.25, L / 2 - Math.min(1.78, Math.max(0.6, L * 0.2)));
-  const d0 = doorC - DOOR_W / 2 - 0.15, d1 = doorC + DOOR_W / 2 + 0.15;
-  const lo = -L / 2 + 0.12 + WIN_W / 2, hi = L / 2 - 0.10 - WIN_W / 2;
+  const lo = -L / 2 + 0.12 + WIN_W / 2, hi = L / 2 - 0.10 - WIN_W / 2, cl = (z) => Math.min(hi, Math.max(lo, z));
+  const zlAll = Array.from({ length: n }, (_, i) => cl(-L / 2 + (i + 0.5) * (L / n) + 0.12 * Math.min(1, L / 9.16)));
+  // porta: centrada onde estava a 1ª janela, com folga mínima de 0,30 m do canto (montante + batente + caixa de passagem)
+  const doorC = Math.min(L / 2 - DOOR_W / 2 - 0.3, Math.max(-L / 2 + DOOR_W / 2 + 0.30, zlAll[0]));
+  const zl = zlAll.slice(1).filter((z) => z - WIN_W / 2 > doorC + DOOR_W / 2 + 0.15);
   const zr = [];
-  for (let i = 0; i < n; i++) {
-    let z = -L / 2 + (i + 0.5) * (L / n) + 0.33 * Math.min(1, L / 9.16);
-    if (z + WIN_W / 2 > d0 && z - WIN_W / 2 < d1) { const after = d1 + WIN_W / 2; z = after <= hi ? after : d0 - WIN_W / 2; }
-    z = Math.min(hi, Math.max(lo, z));
-    if (z + WIN_W / 2 > d0 && z - WIN_W / 2 < d1) continue;
-    if (zr.some((q) => Math.abs(q - z) < WIN_W + 0.2)) continue;
-    zr.push(z);
-  }
-  return { zl: zl.map((z) => Math.min(hi, Math.max(lo, z))), zr, doorC };
+  for (let i = 0; i < n; i++) { const z = cl(-L / 2 + (i + 0.5) * (L / n) + 0.33 * Math.min(1, L / 9.16)); if (!zr.some((q) => Math.abs(q - z) < WIN_W + 0.2)) zr.push(z); }
+  return { zl, zr, doorC };
+}
+const vertical = (H) => { const head = Math.min(WIN_HEAD, H - 0.25); return { head, sill: Math.min(WIN_HEAD - WIN_H, head - 0.6), doorH: Math.min(DOOR_H, H - 0.12) }; };
+
+/** Função pura (SPEC: origem no centro do piso, metros). Aberturas da sala para FOTOMETRIA / croqui da UI.
+ * → [{kind:'window'|'door', wall:'left'|'right'|'front'|'back', x, z, width, sill, head}] (x,z = centro do vão no plano da parede) */
+export function getOpenings(room) {
+  const L = +room.L, W = +room.W, H = +room.H; const { zl, zr, doorC } = layoutOpenings(L); const v = vertical(H);
+  return [
+    { kind: 'door', wall: 'left', x: -W / 2, z: doorC, width: DOOR_W, sill: 0, head: v.doorH },
+    ...zl.map((z) => ({ kind: 'window', wall: 'left', x: -W / 2, z, width: WIN_W, sill: v.sill, head: v.head })),
+    ...zr.map((z) => ({ kind: 'window', wall: 'right', x: W / 2, z, width: WIN_W, sill: v.sill, head: v.head })),
+  ];
 }
 
 export function buildRoom(stage, room) {
@@ -118,14 +139,38 @@ export function buildRoom(stage, room) {
   const group = new THREE.Group(); group.name = 'room'; stage.scene.add(group);
   const M = makeMaterials();
   try { stage.floorReflection?.apply?.(M.floor, { strength: 1.0 }); } catch (e) { console.warn('[room] floorReflection', e); }
-  let wallGroups = [], ceilStruct = null, curH = room.H;
+  let wallGroups = [], ceilStruct = null, curH = room.H, outside = [];
 
   // visibilidade “casa de bonecas”: anexos de uma parede somem quando a câmera está do lado de fora dela;
   // estrutura do teto some quando a câmera está acima do teto (planta / vistas aéreas).
-  stage.onFrame?.(() => {
+  // ---- luz natural vista pelas janelas: lê __sim.state.avaliacao {periodo, ceu}; transição suave ----
+  const DAY = { noturno: { w: [1, 0, 0], glassOp: 0.42, glassCol: 0x1c2026, filmL: 0.03, filmR: 0.03 },
+    nublado: { w: [0, 1, 0], glassOp: 0.12, glassCol: 0xf4f6f7, filmL: 0.85, filmR: 0.75 },
+    ensolarado: { w: [0, 0, 1], glassOp: 0.10, glassCol: 0xffffff, filmL: 1.45, filmR: 0.80 } };
+  const dl = { key: null, cur: null, tgt: null };
+  const condOf = (a) => (a?.periodo === 'diurno' ? (a.ceu === 'ensolarado' ? 'ensolarado' : 'nublado') : 'noturno');
+  const vecOf = (c) => { const d = DAY[c], col = new THREE.Color(d.glassCol); return [...d.w, d.glassOp, col.r, col.g, col.b, d.filmL, d.filmR]; };
+  function setDaylight(a, instant) { const k = condOf(a); if (k === dl.key && !instant) return; dl.key = k; dl.tgt = vecOf(k); if (instant || !dl.cur) dl.cur = dl.tgt.slice(); }
+  try { window.__sim?.on?.('daylight', (a) => setDaylight(a || window.__sim?.state?.avaliacao)); } catch {}
+  setDaylight(window.__sim?.state?.avaliacao, true);
+  const _gc = new THREE.Color();
+  function applyDaylight(dt) {
+    setDaylight(window.__sim?.state?.avaliacao, false);
+    const k = 1 - Math.exp(-(dt || 0.016) * 2.2);
+    for (let i = 0; i < dl.cur.length; i++) dl.cur[i] += (dl.tgt[i] - dl.cur[i]) * k;
+    const c = dl.cur, inv = 1 / Math.max(1e-6, stage.exposure || 1);
+    for (const m of [M.extL, M.extR]) { m.uniforms.w.value.set(c[0], c[1], c[2]); m.uniforms.invExp.value = inv; }
+    M.glass.opacity = c[3]; M.glass.color.setRGB(c[4], c[5], c[6]);
+    // película: emissão difusa (luz do dia atravessando) em unidades pós-exposição, abaixo do limiar do bloom
+    M.filmL.emissiveIntensity = Math.max(0.0, c[7]) * inv * 0.9; M.filmR.emissiveIntensity = Math.max(0.0, c[8]) * inv * 0.9;
+    _gc.set(0xfff1d6); M.filmL.emissive.copy(_gc); M.filmR.emissive.copy(_gc);
+  }
+  stage.onFrame?.((dt) => {
+    try { applyDaylight(dt); } catch (e) { /* estado ainda não disponível */ }
     const cp = stage.camera.position;
     for (const wg of wallGroups) { const { o, n } = wg.userData; wg.visible = (cp.x - o[0]) * n[0] + (cp.z - o[2]) * n[2] > -0.02; }
     if (ceilStruct) ceilStruct.visible = cp.y < curH - 0.01;
+    const inside = cp.y < curH - 0.01; for (const m of outside) m.visible = inside; // fundos externos só de dentro da sala
   });
 
   function emit(target, col, opts = {}) {
@@ -138,13 +183,14 @@ export function buildRoom(stage, room) {
       const mesh = new THREE.Mesh(merged, mat); mesh.name = 'room.' + k;
       mesh.receiveShadow = opts.receive ?? true; mesh.castShadow = (opts.cast ?? false) && !mat.transparent && k !== 'night';
       if (k === 'glass') mesh.renderOrder = 2;
+      if (k === 'extL' || k === 'extR' || k === 'night') { mesh.userData.noReflect = false; outside.push(mesh); }
       target.add(mesh);
     }
   }
 
   function clear() {
     group.traverse((o) => { if (o.isMesh) o.geometry.dispose(); });
-    group.clear(); wallGroups = []; ceilStruct = null;
+    group.clear(); wallGroups = []; ceilStruct = null; outside = [];
   }
 
   function build(r) {
@@ -162,12 +208,11 @@ export function buildRoom(stage, room) {
 
     // ---- aberturas ----
     const { zl, zr, doorC } = layoutOpenings(L);
-    const sill = WIN_HEAD - WIN_H, head = Math.min(WIN_HEAD, H - 0.25);
-    const winV = [Math.min(sill, head - 0.6), head];
-    W_.left.holes = zl.map((z) => { const u = L / 2 - z; return { u0: u - WIN_W / 2, u1: u + WIN_W / 2, v0: winV[0], v1: winV[1], kind: 'win', film: false }; });
-    W_.right.holes = zr.map((z) => { const u = z + L / 2; return { u0: u - WIN_W / 2, u1: u + WIN_W / 2, v0: winV[0], v1: winV[1], kind: 'win', film: true }; });
-    const dh = Math.min(DOOR_H, H - 0.12);
-    W_.right.holes.push({ u0: doorC + L / 2 - DOOR_W / 2, u1: doorC + L / 2 + DOOR_W / 2, v0: 0, v1: dh, kind: 'door' });
+    const vv = vertical(H), winV = [vv.sill, vv.head];
+    W_.left.holes = zl.map((z) => { const u = L / 2 - z; return { u0: u - WIN_W / 2, u1: u + WIN_W / 2, v0: winV[0], v1: winV[1], kind: 'win', film: true, side: 'L' }; });
+    W_.right.holes = zr.map((z) => { const u = z + L / 2; return { u0: u - WIN_W / 2, u1: u + WIN_W / 2, v0: winV[0], v1: winV[1], kind: 'win', film: true, side: 'R' }; });
+    const dh = vv.doorH, ud0 = L / 2 - doorC; // parede esquerda: u = L/2 − z
+    W_.left.holes.push({ u0: ud0 - DOOR_W / 2, u1: ud0 + DOOR_W / 2, v0: 0, v1: dh, kind: 'door' });
     W_.front.holes = []; W_.back.holes = [];
 
     // ---- paredes (grade com AO/sujeira por vértice) ----
@@ -208,7 +253,7 @@ export function buildRoom(stage, room) {
         col.wall.push(quadGeo(P(h.u1, h.v0, 0), P(h.u1, h.v1, 0), P(h.u1, h.v1, t), P(h.u1, h.v0, t), w.ud.map((x) => -x), c, [0, 0, th, 0, th, WALL_T, 0, WALL_T]));
         const hc = (h.u0 + h.u1) / 2, vc = (h.v0 + h.v1) / 2;
         if (h.kind === 'win') {
-          buildWindow(col, wallFrame(w, hc, vc, 0), tw, th, { film: h.film, t: WALL_T });
+          buildWindow(col, wallFrame(w, hc, vc, 0), tw, th, { film: h.film, t: WALL_T, side: h.side });
           // pingadeira/arremate de alumínio sob a janela e na verga (lado interno)
           addBox(col, 'alu', tw + 0.03, 0.012, 0.008, hc, h.v0 - 0.006, 0.004, wallFrame(w, 0, 0, 0));
           addBox(col, 'alu', tw + 0.03, 0.012, 0.008, hc, h.v1 + 0.006, 0.004, wallFrame(w, 0, 0, 0));
@@ -332,13 +377,14 @@ export function buildRoom(stage, room) {
       [[0.124, 1.90, 0], [0.432, 1.68, 1], [0.700, 1.94, 3], [0.893, 1.94, 2]].forEach(([f, y, v]) => buildPoster(col, F(f * W, yP(y)), v));
       buildSwitch(col, F(Math.min(0.168 * W, 0.124 * W + 0.32), Math.min(1.72, H - 0.5)));
     } else if (w.id === 'right') {
-      buildPoster(col, F(0.45, yP(1.95)), 0);
+      if (zr.length && zr[0] - WIN_W / 2 + L / 2 > 0.7) buildPoster(col, F(0.45, yP(1.95)), 0);
       if (zr.length >= 2) buildPoster(col, F((zr[0] + zr[1]) / 2 + L / 2, yP(1.93)), 3);
       addBox(col, 'switch', 0.06, 0.06, 0.03, 0.22, Math.min(2.0, H - 0.4), 0.015, F(0, 0)); // sensor/caixa escura perto do canto (foto)
-      // interruptor junto à porta (lado da maçaneta)
-      buildSwitch(col, F(doorC + L / 2 - DOOR_W / 2 - 0.25, 1.15));
     } else if (w.id === 'left') {
       for (let i = 0; i + 1 < zl.length; i += 2) buildPoster(col, F(L / 2 - (zl[i] + zl[i + 1]) / 2, yP(1.92)), (i + 1) % 4);
+      // interruptor junto à porta nova, no lado da maçaneta (para o fundo da sala, z maior → u menor)
+      const uSw = L / 2 - doorC - DOOR_W / 2 - 0.22;
+      if (!zl.length || uSw > L / 2 - zl[0] + WIN_W / 2 + 0.06) buildSwitch(col, F(uSw, 1.15));
     } else if (w.id === 'back') {
       buildPoster(col, F(W * 0.62, yP(1.85)), 2);
     }

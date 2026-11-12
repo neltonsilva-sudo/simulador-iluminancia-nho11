@@ -4,6 +4,7 @@ import { icon } from './ui_icons.js';
 import { createEnvPicker } from './ui_env.js';
 import { croquiFromApp, miniFigure } from './ui_croqui.js';
 import { openReportStudio } from './ui_report.js';
+import { allConds, resultsFor, completeConds, curKey, COND_KEYS, COND_LABEL, COND_LONG, lumState } from './ui_cond.js';
 import { esc, fmt, parseNum, groupInfo, GROUP_COLORS, ADJ_REASONS, adjustedE, parecer, fracHTML, expandedUI } from './ui_text.js';
 
 const KEY = 'nho11-twin-ui-v1';
@@ -25,7 +26,7 @@ export function createUI(root, app) {
   let activeId = null, fieldSig = '', undoValues = null;
 
   const persist = debounce(() => {
-    try { localStorage.setItem(KEY, JSON.stringify({ ...store, sim: { room: S.room, config: S.config, N: S.N, M: S.M, lum: S.lum, envId: S.envId, continuous: S.continuous, values: S.values, task: S.task } })); } catch {}
+    try { localStorage.setItem(KEY, JSON.stringify({ ...store, sim: { room: S.room, config: S.config, N: S.N, M: S.M, lum: S.lum, envId: S.envId, continuous: S.continuous, values: S.values, task: S.task, avaliacao: S.avaliacao, valuesByCond: S.valuesByCond } })); } catch {}
   }, 350);
 
   // ---------- tema ----------
@@ -39,7 +40,9 @@ export function createUI(root, app) {
     try {
       const s = store.sim; const env = app.QUADRO1.find((x) => x.id === s.envId);
       app.set({ room: s.room, config: s.config, N: s.N, M: s.M, lum: s.lum, continuous: s.continuous, ...(env ? { envId: env.id } : {}) });
+      if (s.avaliacao) app.set({ avaliacao: s.avaliacao });
       app.set({ values: { ...(s.values || {}) }, task: Array.isArray(s.task) ? s.task : [] });
+      if (s.valuesByCond && typeof s.valuesByCond === 'object') { for (const k in s.valuesByCond) if (k !== curKey(app)) S.valuesByCond[k] = s.valuesByCond[k]; }
     } catch (e) { console.warn('[ui] restauração ignorada', e); }
   }
   if (store.adjust) app.set({ Emin: adjustedE(NORM.ESCALA, baseE(), store.adjust) });
@@ -75,7 +78,7 @@ export function createUI(root, app) {
     <button type="button" class="hud-main" aria-label="Ver resultado">
       <span class="hud-k">Ē</span><span class="hud-v">—</span><span class="hud-u">lux</span><span class="chip hud-chip">—</span>
     </button>
-    <div class="hud-sub"><span class="hud-req"></span><span class="hud-prog"><i></i></span><span class="hud-cnt"></span></div>
+    <div class="hud-sub"><span class="hud-cond"></span><span class="hud-req"></span><span class="hud-prog"><i></i></span><span class="hud-cnt"></span></div>
     <button type="button" class="hud-rep" data-hud="report">${icon('doc')}<span>Emitir relatório técnico</span></button>
   </div>
   <div class="dock" role="toolbar" aria-label="Vistas e camadas">
@@ -96,6 +99,17 @@ export function createUI(root, app) {
   const panel = $(root, '.nho-panel');
 
   // ===================== painéis =====================
+  function condHTML(pfx) {
+    return `<div class="cond" data-condbox="${pfx}">
+      <div class="cond-h"><h3 class="sh">Condição da avaliação <small>item 6.2</small></h3><span class="cond-tag"></span></div>
+      <div class="cond-g">
+        <div class="seg seg2" role="radiogroup" aria-label="Período da avaliação">${app.NORM.CONDICOES?.periodo ? '' : ''}<button type="button" role="radio" data-per="noturno">${icon('moon')}<span>Noturna</span></button><button type="button" role="radio" data-per="diurno">${icon('sun')}<span>Diurna</span></button></div>
+        <div class="seg seg2" role="radiogroup" aria-label="Condição do céu"><button type="button" role="radio" data-ceu="nublado">${icon('cloud')}<span>Nublado</span></button><button type="button" role="radio" data-ceu="ensolarado">${icon('sun')}<span>Ensolarado</span></button></div>
+      </div>
+      <label class="mini-chk cond-noct"><input type="checkbox" data-noct><span>Há atividades noturnas no ambiente</span></label>
+      <div class="cbanner" role="note"></div>
+    </div>`;
+  }
   function paneAmb() {
     return `
     <div class="sec">
@@ -111,6 +125,7 @@ export function createUI(root, app) {
         <p class="env-obs"></p>
       </div>
     </div>
+    <div class="sec">${condHTML('amb')}</div>
     <div class="sec">
       <h3 class="sh">Escala de iluminância <small>item 5.1</small></h3>
       <div class="seg" role="radiogroup" aria-label="Ajuste do nível mínimo pela escala">
@@ -175,10 +190,19 @@ export function createUI(root, app) {
         <div class="dim"><label for="lum-dim">Dimerização <b class="dim-v">100%</b></label><input id="lum-dim" type="range" min="10" max="100" step="5"></div>
       </div>
       <p class="hint lum-meta"></p>
+    </div>
+    <div class="sec">
+      <h3 class="sh">Estado das luminárias <small>queimada / depreciada</small></h3>
+      <div class="lgrid" role="group" aria-label="Estado de cada luminária"></div>
+      <div class="lg-row"><label for="lg-dep">Depreciação ao marcar <b class="lg-dep-v">60%</b></label><input id="lg-dep" type="range" min="10" max="95" step="5" value="60">
+        <button type="button" class="btn sm" data-act="lumreset">Restaurar todas</button></div>
+      <p class="hint lg-sum"></p>
+      <p class="hint">${icon('info')} <span>Clique numa luminária (aqui ou no croqui) para alternar: normal → depreciada → queimada. Depois rode <b>Simular leituras</b> e compare Ē e o parecer.</span></p>
     </div>`;
   }
   function paneMed() {
     return `
+    <div class="sec sec-cond">${condHTML('med')}</div>
     <div class="sec">
       <button type="button" class="identify">${icon('target')}<span><b>Identificar pontos de medição</b><small class="id-sub">Marca no teto e projeta no plano a 0,75 m</small></span></button>
       <div class="tools">
@@ -200,6 +224,7 @@ export function createUI(root, app) {
       <div class="gauge" aria-hidden="true"><div class="g-tol"></div><div class="g-fill"></div><div class="g-min"></div><div class="g-e"></div></div>
       <div class="gauge-l"><span class="g-l0">0</span><span class="g-lmin"></span></div>
     </div>
+    <div class="cbanner res-cb" role="note"></div>
     <div class="sec">
       <h3 class="sh">Médias por grupo</h3>
       <div class="gmeans"></div>
@@ -211,6 +236,10 @@ export function createUI(root, app) {
     <div class="sec">
       <h3 class="sh">Faixas de referência</h3>
       <div class="bands"></div>
+    </div>
+    <div class="sec cmp-sec" hidden>
+      <h3 class="sh">Comparativo por condição <small>abas DIA / NOITE</small></h3>
+      <div class="cmp"></div>
     </div>
     <div class="sec">
       <h3 class="sh">Verificações <small>NHO-11, item 5</small></h3>
@@ -421,6 +450,59 @@ export function createUI(root, app) {
     document.addEventListener('keydown', k, true); btn.onclick = close; ov.onclick = (e) => { if (e.target === ov) close(); };
   }
 
+  // ---------- condição da avaliação (período / céu) ----------
+  function setCond(patch) {
+    const before = curKey(app); app.set({ avaliacao: patch }); const after = curKey(app);
+    if (before !== after) { const n = order().filter((id) => isNum(S.values[id])).length;
+      toast(`Condição: ${COND_LABEL[after]}. ${n ? `Leituras desta condição carregadas (${n} de ${order().length}).` : 'Sem leituras nesta condição — meça ou simule.'}`, n ? null : 'Simular', n ? null : () => { if (!S.showPoints) app.identify(); app.simulate(); }); }
+  }
+  root.addEventListener('click', (e) => {
+    const p = e.target.closest('[data-per]'); if (p && !p.disabled) { setCond({ periodo: p.dataset.per }); return; }
+    const c = e.target.closest('[data-ceu]'); if (c && !c.disabled) setCond({ ceu: c.dataset.ceu });
+  });
+  root.addEventListener('change', (e) => { if (e.target.matches?.('[data-noct]')) app.set({ avaliacao: { atividadeNoturna: e.target.checked } }); });
+  root.addEventListener('keydown', (e) => {
+    const b = e.target.closest?.('[data-per],[data-ceu]'); if (!b || !['ArrowLeft', 'ArrowRight'].includes(e.key)) return; e.preventDefault();
+    const sib = [...b.parentElement.querySelectorAll('button:not(:disabled)')]; const nx = sib[(sib.indexOf(b) + (e.key === 'ArrowRight' ? 1 : sib.length - 1)) % sib.length]; nx?.click(); nx?.focus();
+  });
+  function updCond() {
+    const a = S.avaliacao || { periodo: 'noturno', ceu: 'nublado' }; const r = app.results(); const cd = r.condicao || {}; const key = curKey(app);
+    const ic = a.periodo === 'diurno' ? (a.ceu === 'ensolarado' ? 'sun' : 'cloud') : 'moon';
+    $$(root, '[data-per]').forEach((b) => { const on = b.dataset.per === a.periodo; b.setAttribute('aria-checked', on); b.tabIndex = on ? 0 : -1; });
+    $$(root, '[data-ceu]').forEach((b) => { const on = b.dataset.ceu === a.ceu; b.disabled = a.periodo !== 'diurno'; b.setAttribute('aria-checked', on && !b.disabled); b.tabIndex = on && !b.disabled ? 0 : -1; });
+    $$(root, '[data-noct]').forEach((i) => (i.checked = !!a.atividadeNoturna));
+    $$(root, '.cond-tag').forEach((t) => { t.className = 'cond-tag ' + (cd.nivel || 'ok'); t.innerHTML = `${icon(ic)}<span>${COND_LABEL[key]}</span>`; });
+    $$(root, '.cbanner').forEach((bn) => { bn.className = bn.className.replace(/\b(ok|alerta|invalida)\b/g, '').trim() + ' ' + (cd.nivel || 'ok'); bn.innerHTML = cd.texto ? `${icon(cd.nivel === 'ok' ? 'check' : 'warn')}<span>${esc(cd.texto)}</span>` : ''; bn.hidden = !cd.texto; });
+    const hc = $(root, '.hud-cond'); hc.className = 'hud-cond ' + (cd.nivel || 'ok'); hc.innerHTML = `${icon(ic)}<span>${a.periodo === 'diurno' ? `Diurna · ${a.ceu}${a.ceu === 'ensolarado' ? ' ⚠' : ''}` : 'Noturna'}</span>`;
+  }
+  // ---------- estado das luminárias (spec.lumFactors) ----------
+  const depPct = () => +$(root, '#lg-dep').value / 100;
+  $(root, '#lg-dep').oninput = (e) => { $(root, '.lg-dep-v').textContent = e.target.value + '%'; };
+  function cycleLum(id) {
+    const F = S.lum.lumFactors || {}; const f = F[id] ?? 1; const nf = f >= 1 ? depPct() : f > 0 ? 0 : 1;
+    app.set({ lum: { lumFactors: { ...F, [id]: nf } } });
+    const filled = order().some((x) => isNum(S.values[x]));
+    toast(`${id}: ${nf <= 0 ? 'queimada' : nf < 1 ? `depreciada (${Math.round(nf * 100)}%)` : 'normal'}.${filled ? ' As leituras registradas são de antes — simule novamente.' : ''}`, filled ? 'Simular leituras' : null, filled ? () => app.simulate() : null);
+  }
+  $(root, '.lgrid').addEventListener('click', (e) => { const b = e.target.closest('[data-lum]'); if (b) cycleLum(b.dataset.lum); });
+  croBox.addEventListener('click', (e) => { const g = e.target.closest('.cq-lum'); if (g) cycleLum(g.dataset.lum); });
+  function updLumGrid() {
+    const lums = app.luminaires(); const F = S.lum.lumFactors || {}; const grid = $(root, '.lgrid');
+    if (!lums.length) { grid.innerHTML = `<p class="empty">Teto luminoso: sem luminárias individuais.</p>`; grid.dataset.sig = ''; $(root, '.lg-sum').textContent = ''; return; }
+    const xs = [...new Set(lums.map((l) => +l.x.toFixed(3)))].sort((a, b) => a - b), zs = [...new Set(lums.map((l) => +l.z.toFixed(3)))].sort((a, b) => a - b);
+    grid.style.gridTemplateColumns = `repeat(${xs.length}, minmax(0, 1fr))`;
+    const cells = []; for (const z of zs) for (const x of xs) cells.push(lums.find((q) => +q.x.toFixed(3) === x && +q.z.toFixed(3) === z));
+    const sig = cells.map((l) => (l ? l.id + ':' + (F[l.id] ?? 1) : '-')).join();
+    if (grid.dataset.sig !== sig) {
+      grid.dataset.sig = sig;
+      grid.innerHTML = cells.map((l) => { if (!l) return '<span></span>'; const f = Math.max(0, Math.min(1, +(F[l.id] ?? 1))); const st = f <= 0 ? 'off' : f < 1 ? 'dep' : 'ok';
+        return `<button type="button" class="lg ${st}" data-lum="${l.id}" aria-label="Luminária ${l.id}: ${st === 'off' ? 'queimada' : st === 'dep' ? `depreciada ${Math.round(f * 100)}%` : 'normal'} (clique para alternar)"><i></i><b>${l.id}</b><small>${st === 'off' ? 'queimada' : st === 'dep' ? Math.round(f * 100) + '%' : '100%'}</small></button>`; }).join('');
+    }
+    const st = lumState(app);
+    $(root, '.lg-sum').innerHTML = `${icon('bulb')}<span>${st.ids.length} luminárias · ${st.off.length} queimada${st.off.length === 1 ? '' : 's'} · ${st.dep.length} depreciada${st.dep.length === 1 ? '' : 's'} · fluxo efetivo <b>${fmt(st.eff * 100, 0)}%</b></span>`;
+  }
+  $(root, '[data-act=lumreset]').addEventListener('click', (e) => { e.stopPropagation(); const F = {}; for (const l of app.luminaires()) F[l.id] = 1; app.set({ lum: { lumFactors: F } }); toast('Todas as luminárias restauradas (100%).'); });
+
   // ---------- HUD / dock ----------
   $(root, '.hud-rep').onclick = () => doReport();
   $(root, '.hud-main').onclick = () => { if (store.collapsed) setCollapsed(false); if (isMobile() && panel.dataset.sheet === 'peek') setSheet('half'); setTab('res'); };
@@ -514,7 +596,7 @@ export function createUI(root, app) {
     for (const [G, v] of Object.entries(r.groups || {})) { const b = $(fieldsEl, `[data-gm="${G}"]`); if (b) b.textContent = isFinite(v) ? fmt(v, 2) : '—'; }
     const ids = order(); const n = ids.filter((id) => isNum(S.values[id])).length;
     $(root, '.prog-b i').style.width = (100 * n / ids.length) + '%';
-    $(root, '.prog-t').innerHTML = `<b>${n}</b> de ${ids.length} leituras${n === ids.length ? ' · completo' : ''}`;
+    $(root, '.prog-t').innerHTML = `Leituras da ${COND_LONG[curKey(app)]}: <b>${n}</b> de ${ids.length}${n === ids.length ? ' · completo' : ''}`;
     const idb = $(root, '.identify'); idb.classList.toggle('done', !!S.showPoints);
     $(root, '.id-sub').textContent = S.showPoints ? `${ids.length} pontos marcados no teto · clique para refazer` : 'Marca no teto e projeta no plano a 0,75 m';
   }
@@ -524,7 +606,7 @@ export function createUI(root, app) {
     const chip = $(root, '.res-chip'); setChip(chip, r);
     $(root, '.res-E').textContent = ok ? fmt(r.E, 2) : '—';
     const top = Math.max(S.Emin * 1.35, ok ? r.E * 1.12 : 0, 10); const pct = (v) => Math.max(0, Math.min(100, (v / top) * 100)) + '%';
-    $(root, '.g-fill').style.width = ok ? pct(r.E) : '0%'; $(root, '.g-fill').className = 'g-fill ' + (ok ? (r.E >= S.Emin * 0.9 ? 'ok' : 'bad') : '');
+    $(root, '.g-fill').style.width = ok ? pct(r.E) : '0%'; $(root, '.g-fill').className = 'g-fill ' + (ok ? (r.verdict === 'inconclusivo' ? 'warn' : r.E >= S.Emin * 0.9 ? 'ok' : 'bad') : '');
     $(root, '.g-e').style.left = ok ? pct(r.E) : '0%'; $(root, '.g-e').hidden = !ok;
     $(root, '.g-min').style.left = pct(S.Emin); $(root, '.g-tol').style.left = pct(S.Emin * 0.9); $(root, '.g-tol').style.width = `calc(${pct(S.Emin)} - ${pct(S.Emin * 0.9)})`;
     $(root, '.g-lmin').style.left = pct(S.Emin); $(root, '.g-lmin').textContent = `Quadro 1: ${fmt(S.Emin, 0)} lux (−10%: ${fmt(S.Emin * 0.9, 0)})`;
@@ -542,14 +624,21 @@ export function createUI(root, app) {
     $(root, '.checks').innerHTML = (r.checks || []).length ? r.checks.map((c) => `<li class="${c.ok === null ? 'na' : c.ok ? 'ok' : 'bad'}"><span class="ck">${icon(c.ok === null ? 'dash' : c.ok ? 'check' : 'x')}</span><span><b>${esc(c.label)}</b><small>${esc(c.detail)}</small></span></li>`).join('')
       : `<li class="na"><span class="ck">${icon('dash')}</span><span><b>Aguardando leituras</b><small>Faltam ${r.missing.length}: ${esc(r.missing.map((x) => x.toUpperCase()).join(', '))}</small></span></li>`;
     const rn = $(root, '.res-note'); rn.hidden = !r.note; rn.innerHTML = r.note ? `${icon('info')}<span>${esc(r.note)}</span>` : '';
+    const all = allConds(app); const done = completeConds(app); const key = curKey(app);
+    const shown = COND_KEYS.filter((k) => all[k] && Object.values(all[k]).some(isNum));
+    $(root, '.cmp-sec').hidden = shown.length < 2;
+    $(root, '.cmp').innerHTML = shown.map((k) => { const rr = k === key ? r : resultsFor(app, all[k], k); const okk = isFinite(rr.E);
+      const v = rr.verdict === 'atende' ? ['ok', 'Atende'] : rr.verdict === 'nao-atende' ? ['bad', 'Não atende'] : rr.verdict === 'inconclusivo' ? ['warn', 'Inconclusivo'] : ['muted', 'Incompleta'];
+      return `<div class="cmp-r${k === key ? ' cur' : ''}"><span class="cmp-k">${icon(k === 'noturno' ? 'moon' : k.endsWith('ensolarado') ? 'sun' : 'cloud')}${COND_LABEL[k]}${k === key ? ' <em>atual</em>' : ''}</span><b>${okk ? fmt(rr.E, 2) + ' lux' : '—'}</b><span class="chip ${v[0]}">${v[1]}</span></div>`; }).join('');
+    void done;
     const p = parecer(app, r, ctx());
     $(root, '.parecer').className = 'parecer ' + p.tone;
-    $(root, '.parecer').innerHTML = `<div class="par-t">${icon(p.tone === 'ok' ? 'check' : p.tone === 'bad' ? 'warn' : 'info')}<b>${esc(p.title)}</b></div>${p.paras.map((x) => `<p>${esc(x)}</p>`).join('')}${p.recs.length ? `<div class="par-r"><b>Recomendações</b><ul>${p.recs.map((x) => `<li>${esc(x)}</li>`).join('')}</ul></div>` : ''}`;
+    $(root, '.parecer').innerHTML = `<div class="par-t">${icon(p.tone === 'ok' ? 'check' : p.tone === 'bad' || p.tone === 'warn' ? 'warn' : 'info')}<b>${esc(p.title)}</b></div>${p.paras.map((x) => `<p>${esc(x)}</p>`).join('')}${p.recs.length ? `<div class="par-r"><b>Recomendações</b><ul>${p.recs.map((x) => `<li>${esc(x)}</li>`).join('')}</ul></div>` : ''}`;
     const ti = $(root, '#task'); if (document.activeElement !== ti) ti.value = (S.task || []).map(fmtIn).join('; ');
   }
   function setChip(el, r) {
-    const t = r.verdict === 'atende' ? ['ok', 'Atende'] : r.verdict === 'nao-atende' ? ['bad', 'Não atende'] : ['muted', `${(NORM.configById(S.config).points.length - r.missing.length)}/${NORM.configById(S.config).points.length} leituras`];
-    el.className = el.className.replace(/\b(ok|bad|muted)\b/g, '').trim() + ' ' + t[0]; el.textContent = t[1];
+    const t = r.verdict === 'atende' ? ['ok', 'Atende'] : r.verdict === 'nao-atende' ? ['bad', 'Não atende'] : r.verdict === 'inconclusivo' ? ['warn', 'Inconclusivo'] : ['muted', `${(NORM.configById(S.config).points.length - r.missing.length)}/${NORM.configById(S.config).points.length} leituras`];
+    el.className = el.className.replace(/\b(ok|bad|muted|warn)\b/g, '').trim() + ' ' + t[0]; el.textContent = t[1];
   }
   function updHUD() {
     const r = app.results(); const ok = isFinite(r.E);
@@ -567,7 +656,7 @@ export function createUI(root, app) {
     $(root, '[data-tg=on]').setAttribute('aria-pressed', S.lum.on !== false);
   }
   function updateAll() {
-    try { updEnv(); updLum(); updFields(); updHUD(); updDock(); if (tab === 'res') renderRes(); if (tab === 'cro') renderCroqui(); } catch (e) { console.error('[ui] update', e); }
+    try { updEnv(); updLum(); updLumGrid(); updCond(); updFields(); updHUD(); updDock(); if (tab === 'res') renderRes(); if (tab === 'cro') renderCroqui(); } catch (e) { console.error('[ui] update', e); }
     persist();
   }
   const queue = (() => { let raf = 0; return () => { if (!raf) raf = requestAnimationFrame(() => { raf = 0; updateAll(); }); }; })();

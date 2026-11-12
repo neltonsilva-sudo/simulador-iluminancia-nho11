@@ -1,5 +1,18 @@
 // UI — croqui 2D (planta) em SVG, ao vivo, no estilo do croqui da planilha e das figuras do Anexo 1. Dono: UI.
 import { GROUP_COLORS, fmt, esc } from './ui_text.js';
+import * as ROOM from './room.js';
+
+/** Aberturas da sala: room.getOpenings(room) (dono SALA) ou, na falta, o arranjo atual da sala real
+ *  (porta na parede esquerda junto à frente; 3 janelas à esquerda e 4 à direita). */
+export function roomOpenings(room) { try { const l = ROOM.getOpenings?.(room); return Array.isArray(l) && l.length ? l : null; } catch { return null; } }
+export function openingsFor(room) {
+  try { const l = ROOM.getOpenings?.(room); if (Array.isArray(l) && l.length) return l; } catch {}
+  return [
+    { kind: 'porta', wall: 'left', at: 0.133, w: 0.9 },
+    ...[0.389, 0.642, 0.892].map((at) => ({ kind: 'janela', wall: 'left', at, w: 0.95 })),
+    ...[0.157, 0.404, 0.647, 0.815].map((at) => ({ kind: 'janela', wall: 'right', at, w: 0.95 })),
+  ];
+}
 
 const PAL = {
   light: { paper: '#ffffff', wall: '#1d2128', wallFill: '#e9ecf1', line: '#1d2128', dash: '#7d8696', lum: '#ffffff', lumStroke: '#1d2128', lumGlow: 'rgba(255,196,58,.22)', text: '#1d2128', sub: '#5c6575', win: '#1d2128', lumin: 'rgba(255,214,120,.25)' },
@@ -13,7 +26,7 @@ export function croquiSVG(o) {
   const c = PAL[o.dark ? 'dark' : 'light'];
   const { L, W } = o.room; const mini = !!o.mini; const rot = !!o.rotate;
   const S = 100; // px por metro (viewBox)
-  const mL = mini ? 8 : (o.dims !== false ? 92 : 30), mT = mini ? 8 : (o.dims !== false ? 78 : 30), mR = mini ? 8 : (o.openings !== false ? 112 : 46), mB = mini ? 8 : 44;
+  const mL = mini ? 8 : (o.dims !== false ? 92 : 30) + (o.openings !== false ? 66 : 0), mT = mini ? 8 : (o.dims !== false ? 78 : 30), mR = mini ? 8 : 46, mB = mini ? 8 : 44;
   const RW = (rot ? L : W) * S, RH = (rot ? W : L) * S;
   const VW = RW + mL + mR, VH = RH + mT + mB;
   // (x,z) metros → (u,v) px
@@ -36,23 +49,26 @@ export function croquiSVG(o) {
     out.push(`<defs><pattern id="${o.idPrefix || 'c'}hatch" width="${mini ? 26 : 14}" height="${mini ? 26 : 14}" patternUnits="userSpaceOnUse" patternTransform="rotate(45)"><line x1="0" y1="0" x2="0" y2="${mini ? 26 : 14}" stroke="${mini ? 'currentColor' : '#e0a92a'}" stroke-opacity="${mini ? .35 : .45}" stroke-width="${mini ? 5 : 1.5}"/></pattern></defs>`);
     out.push(`<rect x="${r.x}" y="${r.y}" width="${r.w}" height="${r.h}" fill="url(#${o.idPrefix || 'c'}hatch)"/>`);
   }
-  // aberturas (janelas / porta) — como no croqui da planilha
+  // aberturas (janelas / porta) — lidas de room.getOpenings(room) quando existir (formato de OPENINGS: {kind, wall, at, w})
   if (!mini && o.openings !== false) {
-    const win = (side, f, len = 0.95) => {
-      const z = -L / 2 + f * L; const x = side < 0 ? -W / 2 : W / 2;
-      const r = rectXZ(x - (side < 0 ? t / S : 0), z - len / 2, x + (side > 0 ? t / S : 0), z + len / 2);
+    const list = openingsFor(o.room);
+    for (const op of list) {
+      const side = op.wall === 'left' ? -1 : 1, x = side * W / 2, zc = -L / 2 + op.at * L, len = op.w || 0.9;
+      if (op.kind === 'porta') {
+        const dz0 = zc - len / 2, dz1 = zc + len / 2, xo = x + side * t / S;
+        const g = rectXZ(Math.min(x, xo), dz0, Math.max(x, xo), dz1);
+        out.push(`<rect x="${g.x}" y="${g.y}" width="${g.w}" height="${g.h}" fill="${c.paper}" stroke="none"/>`);
+        // folha de 0,90 m abrindo para fora, dobradiça no lado da frente (z menor)
+        const [hx, hy] = map(xo, dz0), [ex, ey] = map(xo + side * len, dz0), [ax, ay] = map(xo, dz1);
+        const sweep = (side > 0) !== rot ? 1 : 0;
+        out.push(`<line x1="${hx}" y1="${hy}" x2="${ex}" y2="${ey}" stroke="${c.win}" stroke-width="1.8"/>`);
+        out.push(`<path d="M${ex} ${ey} A ${len * S} ${len * S} 0 0 ${sweep} ${ax} ${ay}" fill="none" stroke="${c.win}" stroke-width="1"/>`);
+        continue;
+      }
+      const r = rectXZ(x - (side < 0 ? t / S : 0), zc - len / 2, x + (side > 0 ? t / S : 0), zc + len / 2);
       out.push(`<rect x="${r.x}" y="${r.y}" width="${r.w}" height="${r.h}" fill="${c.paper}" stroke="${c.win}" stroke-width="1.3"/>`);
       for (const k of [1 / 3, 2 / 3]) { if (rot) out.push(`<line x1="${r.x}" y1="${r.y + r.h * k}" x2="${r.x + r.w}" y2="${r.y + r.h * k}" stroke="${c.win}" stroke-width="1"/>`); else out.push(`<line x1="${r.x + r.w * k}" y1="${r.y}" x2="${r.x + r.w * k}" y2="${r.y + r.h}" stroke="${c.win}" stroke-width="1"/>`); }
-    };
-    [0.14, 0.39, 0.64, 0.89].forEach((f) => win(-1, f));
-    [0.16, 0.40, 0.645].forEach((f) => win(1, f)); win(1, 0.93, 0.62);
-    // porta (folha 0,90 m abrindo para fora, como no croqui)
-    const dz0 = -L / 2 + 0.765 * L, dz1 = dz0 + 0.9, x = W / 2;
-    const g = rectXZ(x, dz0, x + t / S, dz1);
-    out.push(`<rect x="${g.x}" y="${g.y}" width="${g.w}" height="${g.h}" fill="${c.paper}" stroke="none"/>`);
-    const [hx, hy] = map(x + t / S, dz0), [ex, ey] = map(x + t / S + 0.9, dz0), [ax, ay] = map(x + t / S, dz1);
-    out.push(`<line x1="${hx}" y1="${hy}" x2="${ex}" y2="${ey}" stroke="${c.win}" stroke-width="1.8"/>`);
-    out.push(`<path d="M${ex} ${ey} A ${0.9 * S} ${0.9 * S} 0 0 ${rot ? 0 : 1} ${ax} ${ay}" fill="none" stroke="${c.win}" stroke-width="1" stroke-dasharray="${rot ? '0' : '0'}"/>`);
+    }
   }
   // linhas de construção (tracejados das figuras da NHO / croqui)
   const lums = o.lums || [], pts = o.points || [];
@@ -83,11 +99,17 @@ export function croquiSVG(o) {
     if (mini) out.push(`<rect x="${r.x}" y="${r.y}" width="${r.w}" height="${r.h}" rx="5" fill="currentColor" fill-opacity=".85"/>`);
     else {
       obst.push({ x: r.x - 4, y: r.y - 4, w: r.w + 8, h: r.h + 8 });
-      out.push(`<rect x="${r.x - 5}" y="${r.y - 5}" width="${r.w + 10}" height="${r.h + 10}" rx="8" fill="${o.on === false ? 'none' : c.lumGlow}"/>`);
-      out.push(`<rect x="${r.x}" y="${r.y}" width="${r.w}" height="${r.h}" fill="${c.lum}" stroke="${c.lumStroke}" stroke-width="1.4"/>`);
+      const f = Math.max(0, Math.min(1, +(o.lumFactors?.[l.id] ?? 1)));
+      out.push(`<g class="cq-lum" data-lum="${l.id}"${o.interactive ? ' style="cursor:pointer"' : ''}><title>${l.id}${f <= 0 ? ' — queimada' : f < 1 ? ` — depreciada (${Math.round(f * 100)}%)` : ''}</title>`);
+      if (o.interactive) out.push(`<rect x="${r.x - 8}" y="${r.y - 12}" width="${r.w + 16}" height="${r.h + 24}" fill="transparent"/>`);
+      out.push(`<rect x="${r.x - 5}" y="${r.y - 5}" width="${r.w + 10}" height="${r.h + 10}" rx="8" fill="${o.on === false || f <= 0 ? 'none' : c.lumGlow}" opacity="${f}"/>`);
+      out.push(`<rect x="${r.x}" y="${r.y}" width="${r.w}" height="${r.h}" fill="${f <= 0 ? (o.dark ? '#4a505a' : '#5b616b') : f < 1 ? (o.dark ? '#3a4049' : '#cfd4dc') : c.lum}" stroke="${c.lumStroke}" stroke-width="1.4"/>`);
       const [cx, cy] = map(l.x, l.z);
       if (l.axis === 'x' && !rot || l.axis === 'z' && rot) out.push(`<line x1="${cx - 5}" y1="${r.y}" x2="${cx - 5}" y2="${r.y + r.h}" stroke="${c.lumStroke}" stroke-width="1"/><line x1="${cx + 5}" y1="${r.y}" x2="${cx + 5}" y2="${r.y + r.h}" stroke="${c.lumStroke}" stroke-width="1"/>`);
       else out.push(`<line x1="${r.x}" y1="${cy - 5}" x2="${r.x + r.w}" y2="${cy - 5}" stroke="${c.lumStroke}" stroke-width="1"/><line x1="${r.x}" y1="${cy + 5}" x2="${r.x + r.w}" y2="${cy + 5}" stroke="${c.lumStroke}" stroke-width="1"/>`);
+      if (f <= 0) out.push(`<path d="M${cx - 14} ${cy - 14}L${cx + 14} ${cy + 14}M${cx - 14} ${cy + 14}L${cx + 14} ${cy - 14}" stroke="#d6342c" stroke-width="4" stroke-linecap="round"/>`);
+      else if (f < 1) out.push(`<text x="${cx}" y="${r.y + r.h + 17}" text-anchor="middle" font-size="16" font-weight="700" fill="#b26b00" paint-order="stroke" stroke="${c.paper}" stroke-width="4">${Math.round(f * 100)}%</text>`);
+      out.push('</g>');
     }
   }
   // pontos
@@ -130,7 +152,7 @@ export function croquiSVG(o) {
     };
     const hor = rot ? L : W, ver = rot ? W : L;
     out.push(dim(mL, mT - t - 30, mL + RW, mT - t - 30, fmt(hor, 2), false));
-    out.push(dim(mL - t - 38, mT, mL - t - 38, mT + RH, fmt(ver, 2), true));
+    { const xd = mL - t - 38 - (o.openings !== false ? 66 : 0); out.push(dim(xd, mT, xd, mT + RH, fmt(ver, 2), true)); }
     out.push(`<text x="${mL + RW / 2}" y="${mT + RH + t + 26}" font-size="15" fill="${c.sub}" text-anchor="middle">medidas internas em metros · área ${fmt(W * L, 2)} m²</text>`);
   }
   out.push('</svg>');
@@ -141,7 +163,7 @@ export function croquiSVG(o) {
 export function croquiFromApp(app, extra = {}) {
   const S = app.state; const cfg = app.NORM.configById(S.config);
   let bands = null; try { bands = app.results().bands; } catch {}
-  return croquiSVG({ room: S.room, layout: cfg.layout, lums: app.luminaires(), points: app.points(), values: S.values, bands, on: S.lum?.on, ...extra });
+  return croquiSVG({ room: S.room, layout: cfg.layout, lumFactors: S.lum?.lumFactors, lums: app.luminaires(), points: app.points(), values: S.values, bands, on: S.lum?.on, ...extra });
 }
 
 /** Mini-desenho de cada figura do Anexo 1 (usa a mesma geometria normativa de norm.js). */

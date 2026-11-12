@@ -86,7 +86,7 @@ setOpenings(openSave);
 
 // ---- 5. Luz natural (janelas) e fator por luminária (depreciada/queimada)
 { const dl = { ...spec, on: false, daylight: 1 };
-  const nearL = illuminanceAt(-2.4, 0.75, -3.0, lums, room, dl), mid = illuminanceAt(0, 0.75, 0, lums, room, dl), nearR = illuminanceAt(2.4, 0.75, -3.0, lums, room, dl);
+  const nearL = illuminanceAt(-2.4, 0.75, -1.02, lums, room, dl), mid = illuminanceAt(0, 0.75, 0, lums, room, dl), nearR = illuminanceAt(2.4, 0.75, -1.22, lums, room, dl);
   const dg2 = diagnostics(lums, room, dl);
   console.log(`Luz natural (dia nublado 10 klx, luminárias desligadas): junto às janelas esq. ${nearL.toFixed(0)} lux · centro ${mid.toFixed(0)} lux (FLD ${(mid / 100).toFixed(2)} %) · dir. ${nearR.toFixed(0)} lux`);
   ok(mid > 30 && mid < 400 && nearL > mid, 'luz natural: ordem de grandeza plausível (FLD central 0,3–4 %) e decrescente para o interior');
@@ -97,6 +97,35 @@ setOpenings(openSave);
     E5 = illuminanceAt(under.x, 0.75, under.z, lums, room, { ...spec, lumFactors: { [id]: 0.5 } });
   console.log(`Luminária ${id} queimada: sob ela ${E1.toFixed(0)} → ${E0.toFixed(0)} lux (50 %: ${E5.toFixed(0)})`);
   ok(E0 < 0.75 * E1 && Math.abs((E1 - E5) / (E1 - E0) - 0.5) < 1e-6, 'lumFactors: lâmpada queimada reduz localmente e é linear');
+}
+
+// ---- 6. Condição da avaliação: noturna < diurna nublada < diurna ensolarada (sol direto pelas janelas x = −W/2)
+{ const { sunPatches, skyCondition, SUN } = await import('../src/photo_core.js');
+  const conds = [['noturno', 'nublado', 0], ['diurno', 'nublado', 1], ['diurno', 'ensolarado', 2.5]];
+  const res = conds.map(([period, sky, daylight]) => { const sp = { ...spec, period, sky, daylight }, v = {};
+    for (const p of pts) v[p.id] = illuminanceAt(p.x, 0.75, p.z, lums, room, sp);
+    const g = computeGrid(lums, room, sp, 0.1); return { label: skyCondition(sp).label, E: computeIM(1, v, { N: 4, M: 2, L: room.L, W: room.W }).E, g, v, sp }; });
+  for (const r of res) console.log(`${r.label.padEnd(20)} Ē(NHO) ${r.E.toFixed(1).padStart(7)}  média grade ${r.g.Emed.toFixed(1).padStart(7)}  Emín ${r.g.Emin.toFixed(0).padStart(5)}  Emáx ${r.g.Emax.toFixed(0).padStart(6)}`);
+  ok(res[0].E < res[1].E && res[1].E < res[2].E, 'Ē noturna < diurna nublada < diurna ensolarada');
+  // fator de luz diurna (céu encoberto 10 klx, luminárias desligadas) no plano de trabalho
+  const off = { ...spec, on: false, period: 'diurno', sky: 'nublado', daylight: 1 }, gd = computeGrid(lums, room, off, 0.1);
+  const DF = gd.Emed / 10000 * 100, DFmin = gd.Emin / 10000 * 100;
+  console.log(`Fator de luz diurna (nublado, 10 klx): médio ${DF.toFixed(2)} %, mínimo ${DFmin.toFixed(2)} %`);
+  ok(DF >= 1 && DF <= 5, `nublado: fator de luz diurna médio entre 1 e 5 % (${DF.toFixed(2)} %)`);
+  const night0 = illuminanceAt(0, 0.75, 0, lums, room, { ...spec, on: false, period: 'noturno', sky: 'ensolarado', daylight: 2.5 });
+  ok(night0 === 0, 'período noturno ignora o céu (0 lux com luminárias desligadas)');
+  // manchas de sol
+  const sunny = res[2].sp, sp0 = sunPatches(room, sunny), spF = sunPatches(room, sunny, 0);
+  console.log(`Sol: alt ${SUN.alt}°, az ${SUN.az}°; ${sp0.length} manchas no plano 0,75 m (E ${sp0[0]?.E.toFixed(0)} lux), ${spF.length} no piso; mancha 1 (0,75 m): ${sp0[0]?.pts.map((q) => `(${q[0].toFixed(2)},${q[1].toFixed(2)})`).join(' ')}`);
+  ok(sp0.length >= 3 && spF.length >= 3, 'sunPatches: uma mancha por janela ensolarada (plano e piso)');
+  const c = sp0[0].pts.reduce((a, q) => [a[0] + q[0] / sp0[0].pts.length, a[1] + q[1] / sp0[0].pts.length], [0, 0]);
+  const Ein = illuminanceAt(c[0], 0.75, c[1], lums, room, sunny), Eout = illuminanceAt(c[0] + 1.6, 0.75, c[1], lums, room, sunny);
+  console.log(`Centro da mancha (${c[0].toFixed(2)}, ${c[1].toFixed(2)}): ${Ein.toFixed(0)} lux; 1,6 m adiante: ${Eout.toFixed(0)} lux`);
+  ok(Ein > 2000 && Ein > 5 * Eout, 'ponto dentro da mancha de sol: milhares de lux');
+  const S2 = (await import('../src/photo_core.js')).solve(lums, room, sunny), d = [Math.cos(SUN.alt * Math.PI / 180) * Math.cos(SUN.az * Math.PI / 180)];
+  const winA = OPENINGS.filter((o) => o.kind === 'janela' && o.wall === 'left').reduce((a, o) => a + o.w * (o.y1 - o.y0), 0);
+  const expect = S2.Esun * d[0] * winA;
+  ok(Math.abs(S2.sunFlux / expect - 1) < 0.01, `fluxo solar que entra = depositado nas superfícies (${S2.sunFlux.toFixed(0)} vs ${expect.toFixed(0)} lm)`);
 }
 
 // ---- 4. Outras configurações e tipos (sanidade, sem NaN)

@@ -292,6 +292,37 @@ export function exteriorTexture() { // vão claro bege-acinzentado (muro/corredo
     return tex(c, { wrap: false });
   });
 }
+// dia nublado: céu cinza-esbranquiçado difuso + prédio vizinho genérico claro (sem marcas)
+export function exteriorCloudTexture() {
+  return once('extC', () => {
+    const W = 512, H = 512, c = canvas(W, H), g = c.getContext('2d'), rnd = rng(515);
+    const sky = g.createLinearGradient(0, 0, 0, H * 0.55); sky.addColorStop(0, '#e4e7ea'); sky.addColorStop(1, '#f1f2f2'); g.fillStyle = sky; g.fillRect(0, 0, W, H);
+    g.filter = 'blur(14px)'; for (let k = 0; k < 14; k++) { g.fillStyle = `rgba(${200 + rnd() * 30},${205 + rnd() * 30},${212 + rnd() * 30},0.5)`; g.beginPath(); g.ellipse(rnd() * W, rnd() * H * 0.45, 40 + rnd() * 90, 14 + rnd() * 26, 0, 0, Math.PI * 2); g.fill(); } g.filter = 'none';
+    // prédio vizinho (bloco claro com janelas em fita) e muro
+    g.fillStyle = '#c9c7c1'; g.fillRect(W * 0.08, H * 0.40, W * 0.6, H * 0.6);
+    g.fillStyle = '#9fa3a6'; for (let r = 0; r < 3; r++) for (let k = 0; k < 6; k++) g.fillRect(W * 0.11 + k * W * 0.095, H * (0.46 + r * 0.13), W * 0.07, H * 0.06);
+    g.fillStyle = '#d9d4ca'; g.fillRect(0, H * 0.72, W, H * 0.28); g.fillStyle = 'rgba(0,0,0,0.08)'; g.fillRect(0, H * 0.72, W, 6);
+    g.filter = 'blur(2px)'; g.drawImage(c, 0, 0); g.filter = 'none';
+    return tex(c, { wrap: false });
+  });
+}
+// dia ensolarado: céu azul-claro, muro creme ensolarado, copa de árvore e prédio genérico
+export function exteriorSunTexture() {
+  return once('extS', () => {
+    const W = 512, H = 512, c = canvas(W, H), g = c.getContext('2d'), rnd = rng(616);
+    const sky = g.createLinearGradient(0, 0, 0, H * 0.6); sky.addColorStop(0, '#7fb2e3'); sky.addColorStop(1, '#c7dff2'); g.fillStyle = sky; g.fillRect(0, 0, W, H);
+    g.filter = 'blur(10px)'; for (let k = 0; k < 5; k++) { g.fillStyle = 'rgba(255,255,255,0.55)'; g.beginPath(); g.ellipse(rnd() * W, H * (0.08 + rnd() * 0.25), 50 + rnd() * 70, 12 + rnd() * 16, 0, 0, Math.PI * 2); g.fill(); } g.filter = 'none';
+    g.fillStyle = '#e6dccb'; g.fillRect(W * 0.55, H * 0.30, W * 0.45, H * 0.7); g.fillStyle = '#b9b2a6'; g.fillRect(W * 0.55, H * 0.30, W * 0.07, H * 0.7);
+    g.fillStyle = '#8f9aa3'; for (let r = 0; r < 3; r++) for (let k = 0; k < 3; k++) g.fillRect(W * 0.66 + k * W * 0.11, H * (0.36 + r * 0.14), W * 0.07, H * 0.07);
+    // árvore: tronco + copa de vários verdes
+    g.fillStyle = '#5d4a36'; g.fillRect(W * 0.27, H * 0.5, W * 0.03, H * 0.3);
+    g.filter = 'blur(3px)'; for (let k = 0; k < 60; k++) { const a = rnd() * Math.PI * 2, r = rnd() * W * 0.17; g.fillStyle = `hsl(${95 + rnd() * 35},${35 + rnd() * 25}%,${22 + rnd() * 26}%)`; g.beginPath(); g.arc(W * 0.285 + Math.cos(a) * r, H * 0.42 + Math.sin(a) * r * 0.7, 10 + rnd() * 22, 0, Math.PI * 2); g.fill(); } g.filter = 'none';
+    // muro ensolarado com sombra projetada
+    g.fillStyle = '#efe4cf'; g.fillRect(0, H * 0.70, W, H * 0.30); g.fillStyle = 'rgba(70,60,40,0.22)'; g.beginPath(); g.moveTo(0, H * 0.70); g.lineTo(W * 0.45, H * 0.70); g.lineTo(W * 0.30, H); g.lineTo(0, H); g.fill();
+    g.filter = 'blur(1.5px)'; g.drawImage(c, 0, 0); g.filter = 'none';
+    return tex(c, { wrap: false });
+  });
+}
 export function nightTexture() {
   return once('night', () => {
     const W = 256, H = 256, c = canvas(W, H), g = c.getContext('2d');

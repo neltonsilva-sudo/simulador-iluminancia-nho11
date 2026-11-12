@@ -1,8 +1,9 @@
 // UI — "Emitir relatório técnico": formulário + pré-visualização A4 fiel ao modelo do Excel do usuário
 // (docs/RELATORIO_MODELO.md — aba "RELATORIO TEC. ILUMINANCIA-EAD"). Sem logotipo de instituição. Dono: UI.
 import { esc, fmt, parecer, GROUP_COLORS, groupInfo, fracHTML, expandedUI } from './ui_text.js';
-import { croquiFromApp } from './ui_croqui.js';
+import { croquiFromApp, roomOpenings } from './ui_croqui.js';
 import { icon } from './ui_icons.js';
+import { allConds, resultsFor, completeConds, curKey, COND_LONG, COND_SHEET, COND_LABEL, lumState } from './ui_cond.js';
 
 const KEY = 'nho11-twin-relatorio-v1', FOTO_KEY = 'nho11-twin-relatorio-foto-v1';
 const load = (k, d) => { try { return JSON.parse(localStorage.getItem(k) || 'null') ?? d; } catch { return d; } };
@@ -35,6 +36,7 @@ const paras = (t) => String(t || '').split(/\n{1,}/).map((x) => x.trim()).filter
 const sig = (s) => { let h = 0; for (const c of String(s)) h = (h * 31 + c.charCodeAt(0)) | 0; return h; };
 const lower1 = (s) => (s ? s.charAt(0).toLowerCase() + s.slice(1) : s);
 
+const condFrase = (S) => (S.avaliacao?.periodo === 'diurno' ? `diurno, com céu ${S.avaliacao.ceu}` : 'noturno');
 /** Texto da descrição do ambiente (item 4). */
 function descText(app, rel) {
   const S = app.state; const cfg = app.NORM.configById(S.config); const T = app.LUM_TYPES.find((x) => x.id === S.lum.type) || {};
@@ -48,26 +50,41 @@ function descText(app, rel) {
     const disp = cfg.layout === 'continuous' || cfg.layout === 'continuous1' ? `formando ${nx(M, true)} linha${M > 1 ? 's' : ''} contínua${M > 1 ? 's' : ''} de ${nx(S.N, true)}` : `dispostas regularmente em ${nx(M, true)} fileira${M > 1 ? 's' : ''} de ${nx(S.N, true)}`;
     arr = `A iluminação artificial se dá através de ${nx(n, true, true)} luminárias do tipo ${tipo}, ${disp}, instaladas ${rel.instalacao}`;
   }
-  const portas = +rel.portas || 0, jan = +rel.janelas || 0;
+  const ops = roomOpenings(S.room); const portas = ops ? ops.filter((o) => o.kind === 'porta').length : +rel.portas || 0, jan = ops ? ops.filter((o) => o.kind === 'janela').length : +rel.janelas || 0;
   return `O(A) ${local} é utilizado(a) para ${rel.atividade || '________'}, no período ${rel.periodo}, e possui iluminação do tipo ${rel.tipoIlum}. ${arr}. ` +
-    `O ambiente possui área total de ${fmt(S.room.L * S.room.W, 2)} m² (${fmt(S.room.L, 2)} m × ${fmt(S.room.W, 2)} m), pé-direito de ${fmt(S.room.H, 2)} m, dispondo de ${nx(portas, true)} porta${portas === 1 ? '' : 's'} e ${nx(jan, true)} janela${jan === 1 ? '' : 's'}, e paredes em cores claras.`;
+    lumTxt(app) + `O ambiente possui área total de ${fmt(S.room.L * S.room.W, 2)} m² (${fmt(S.room.L, 2)} m × ${fmt(S.room.W, 2)} m), pé-direito de ${fmt(S.room.H, 2)} m, dispondo de ${nx(portas, true)} porta${portas === 1 ? '' : 's'} e ${nx(jan, true)} janela${jan === 1 ? '' : 's'}, e paredes em cores claras.`;
 }
 
+function lumTxt(app) {
+  const st = lumState(app); const t = [];
+  if (st.off.length) t.push(`${nx(st.off.length, true)} luminária${st.off.length > 1 ? 's' : ''} apagada${st.off.length > 1 ? 's' : ''}/queimada${st.off.length > 1 ? 's' : ''} (${st.off.join(', ')})`);
+  if (st.dep.length) t.push(`${nx(st.dep.length, true)} com fluxo luminoso reduzido por depreciação (${st.dep.map((id) => `${id}: ${Math.round((app.state.lum.lumFactors[id]) * 100)}%`).join(', ')})`);
+  return t.length ? `No momento da avaliação, havia ${t.join(' e ')}. ` : '';
+}
 /** Frase da avaliação preliminar (item 5). */
 function prelimText(app, rel) {
   const local = rel.local || app.results().env?.nome || 'ambiente avaliado';
   const has = CHECK.filter(([k]) => rel.chk?.[k]).map((x) => x[1]), not = CHECK.filter(([k]) => !rel.chk?.[k]).map((x) => x[1]);
   const list = (a) => (a.length > 1 ? a.slice(0, -1).join(', ') + ' e ' + a[a.length - 1] : a[0] || '');
-  let t = `Na avaliação preliminar (NHO-11, item 6.1 e Anexo 2) realizada em ${rel.datas || '____/____/______'}, no horário das ${rel.h1 || '____'} às ${rel.h2 || '____'}, no(a) ${local}, verificou-se que `;
+  const S = app.state; const st = lumState(app);
+  let t = `Na avaliação preliminar (NHO-11, item 6.1 e Anexo 2) realizada em ${rel.datas || '____/____/______'}, no horário das ${rel.h1 || '____'} às ${rel.h2 || '____'}, no período ${condFrase(S)}, no(a) ${local}, verificou-se que `;
   if (!has.length) t += `não há ${list(not)}.`;
   else if (!not.length) t += `há ${list(has)}.`;
   else t += `não há ${list(not)}; contudo, há ${list(has)}.`;
-  return t + ' As medições foram realizadas sob as condições mais desfavoráveis, sem contribuição de iluminação natural, com o sistema de iluminação em operação típica.';
+  if (st.off.length || st.dep.length) t += ` Observaram-se ${[st.off.length ? `${st.off.length} luminária(s) apagada(s)/queimada(s)` : '', st.dep.length ? `${st.dep.length} com fluxo reduzido` : ''].filter(Boolean).join(' e ')}.`;
+  const cond = S.avaliacao?.periodo !== 'diurno' ? ' As medições foram realizadas no período noturno, sob a condição mais desfavorável, sem contribuição de iluminação natural, com o sistema de iluminação em operação típica.'
+    : S.avaliacao.ceu === 'nublado' ? ' As medições foram realizadas em dia nublado, com janelas e cortinas na condição de uso normal — condição desfavorável admitida pelo item 6.2 da NHO-11.' + (S.avaliacao.atividadeNoturna ? ' Como há atividades noturnas no ambiente, as medições também devem ser realizadas à noite.' : '')
+    : ' ATENÇÃO: as medições foram realizadas em dia ensolarado; a contribuição da luz natural eleva as leituras e invalida a avaliação da iluminação instalada (item 6.2 da NHO-11).';
+  return t + cond;
 }
 
 /** Parecer técnico no texto-modelo da planilha (item 6). */
 function parecerText(app, r) {
   const S = app.state; if (!isFinite(r.E)) return 'Avaliação incompleta: preencha todas as leituras dos pontos de medição para emitir o parecer técnico.';
+  const key = curKey(app); const all = allConds(app);
+  const cmp = completeConds(app).filter((k) => k !== key).map((k) => `Na ${COND_LONG[k]}, a iluminância média foi de ${fmt(resultsFor(app, all[k], k).E, 2)} lux.`).join(' ');
+  if (r.verdict === 'inconclusivo') return [`A avaliação foi realizada no período diurno, com céu ensolarado. Nessa condição, a luz natural eleva as leituras (Ē = ${fmt(r.E, 2)} lux) e o resultado NÃO representa a iluminação artificial instalada.`,
+    'Conforme o item 6.2 da NHO-11, as medições devem ser realizadas na condição mais desfavorável, de forma que o iluminamento dependa somente das fontes instaladas. PELO EXPOSTO, a avaliação é INCONCLUSIVA e deve ser repetida à noite ou em dia nublado; avaliar também ofuscamento e reflexos causados pelo sol (Anexo 2).', cmp].filter(Boolean).join('\n');
   const E = S.Emin, tol = E * 0.9, Em = r.E, lim = r.bands.lim70; const c = Object.fromEntries((r.checks || []).map((x) => [x.id, x]));
   const vals = Object.values(S.values).map(Number).filter((v) => isFinite(v));
   const out = [];
@@ -77,6 +94,7 @@ function parecerText(app, r) {
       `a razão entre a maior leitura e a iluminância média é de ${c['5:1']?.detail || '—'} (limite 5:1)${c['200'] ? ', e nenhuma leitura é inferior a 200 lux (tarefas contínuas)' : ''}.`);
     if (c.tarefa) out.push(`As leituras da área da tarefa atendem ao valor do Quadro 1 com a tolerância de 10% (${c.tarefa.detail.toLowerCase()}).`);
     if (r.note) out.push(r.note);
+    if (cmp) out.push(cmp);
     out.push('Portanto, o nível de iluminância encontra-se DENTRO DO LIMITE estabelecido pela NHO-11. PELO EXPOSTO, o ambiente de trabalho é considerado ADEQUADO quanto à iluminação (NR-17, item 17.8).');
     return out.join('\n');
   }
@@ -97,6 +115,8 @@ function parecerText(app, r) {
   if (c['5:1'] && c['5:1'].ok === false) extra.push(`a razão entre a maior leitura e a iluminância média (${c['5:1'].detail}) excede 5:1`);
   if (extra.length) out.push('Verificou-se ainda que ' + extra.join('; ') + '.');
   if (r.note) out.push(r.note);
+  if (cmp) out.push(cmp);
+  if (r.condicao?.nivel === 'alerta') out.push(r.condicao.texto);
   out.push(`Portanto, o nível de iluminância encontra-se ABAIXO DO LIMITE estabelecido pela NHO-11. PELO EXPOSTO, o ambiente de trabalho é considerado ANTIERGONÔMICO quanto à iluminação (NR-17, item 17.8).`);
   return out.join('\n');
 }
@@ -106,21 +126,50 @@ function editable(rel, key, auto, on) {
   return `<div class="rp-ed" data-ed="${key}"${on ? ' contenteditable="true" spellcheck="true" title="Clique para editar o texto antes de imprimir"' : ''}>${paras(txt)}</div>`;
 }
 
-// ---------------- documento ----------------
-export function reportHTML(app, rel, ctx = {}, { edit = false, foto = null } = {}) {
-  const S = app.state; const N = app.NORM; const cfg = N.configById(S.config); const r = app.results(); const env = r.env || {};
-  const local = rel.local || env.nome || 'ambiente avaliado'; const ok = isFinite(r.E); const lim = r.bands?.lim70;
+
+/** Quadro de cálculo no padrão da aba "EAD" da planilha, para as leituras de uma condição. */
+function quadroHTML(app, r, values, { title = '', croqui = true } = {}) {
+  const S = app.state; const cfg = app.NORM.configById(S.config); const env = r.env || {}; const ok = isFinite(r.E); const lim = r.bands?.lim70;
   const pts = app.points(); const byG = {}; cfg.points.forEach((id) => (byG[id[0].toUpperCase()] ||= []).push(id));
   const G = Object.keys(byG); const rows = Math.max(...G.map((g) => byG[g].length));
-  const v = (id) => { const x = S.values[id]; return x != null && x !== '' && isFinite(+x) ? +x : null; };
+  const v = (id) => { const x = values[id]; return x != null && x !== '' && isFinite(+x) ? +x : null; };
   let tbl = `<thead><tr>${G.map((g) => `<th colspan="2" style="--g:${GROUP_COLORS[g]}"><i></i>${g} — ${esc(groupInfo(cfg.layout)[g] || '')}</th>`).join('')}</tr></thead><tbody>`;
   for (let i = 0; i < rows; i++) tbl += '<tr>' + G.map((g) => { const id = byG[g][i]; if (!id) return '<td></td><td></td>';
     const x = v(id); return `<td class="pt">${id.toUpperCase()}</td><td class="n${x != null && lim != null && x < lim ? ' low' : ''}">${x != null ? fmt(x, 1) : ''}</td>`; }).join('') + '</tr>';
   tbl += `<tr class="avg">${G.map((g) => `<td class="pt">${g}</td><td class="n">${fmt(r.groups?.[g], 2)}</td>`).join('')}</tr></tbody>`;
+  const NM = cfg.layout === 'grid' || cfg.layout === 'continuous' ? `N = ${S.N} (luminárias por fila) · M = ${S.M} (filas)` : cfg.layout === 'single' || cfg.layout === 'continuous1' ? `N = ${S.N} (luminárias na linha)` : cfg.layout === 'luminous' ? `L = ${fmt(S.room.L, 2)} m · W = ${fmt(S.room.W, 2)} m` : '';
+  return `<div class="rp-ead">
+      <div class="rp-ead-h">QUADRO DE CÁLCULO DA ILUMINÂNCIA MÉDIA — NHO-11, ANEXO 1 · ${title}</div>
+      <table class="rp-kv2">
+        <tr><th>Tipo de ambiente (Quadro 1)</th><td>${esc(env.nome || '—')}</td><th>E mínimo</th><td class="n"><b>${fmt(S.Emin, 0)} lux</b>${env.IRC ? ` · IRC ≥ ${esc(env.IRC)}` : ''}</td></tr>
+        <tr><th>Área (lado × lado)</th><td>${fmt(S.room.L, 2)} m × ${fmt(S.room.W, 2)} m = <b>${fmt(r.area, 2)} m²</b></td><th>Área ± 3%</th><td class="n">${fmt(r.areaBand[0], 2)} – ${fmt(r.areaBand[1], 2)} m²</td></tr>
+      </table>
+      ${croqui ? `<figure class="rp-cro">${croquiFromApp(app, { dark: false, idPrefix: 'rel' })}<figcaption><span><i style="background:${GROUP_COLORS.P}"></i>P</span><span><i style="background:${GROUP_COLORS.T}"></i>T</span><span><i style="background:${GROUP_COLORS.Q}"></i>Q</span><span><i style="background:${GROUP_COLORS.R}"></i>R</span><span>Croqui — Fig. ${cfg.fig} (${esc(cfg.short)})</span></figcaption></figure>` : ''}
+      <div class="rp-form"><div class="rp-form-k">Fórmula da iluminância média</div><div>${fracHTML(cfg.formula)}</div><div class="rp-form-nm">${NM}</div>
+        <div>${fracHTML('Ē = ' + expandedUI(cfg.id, r.groups, { N: S.N, M: S.M, L: S.room.L, W: S.room.W }))} &nbsp;⇒&nbsp; <b>Ē = ${ok ? fmt(r.E, 2) : '—'} lux</b></div></div>
+      <table class="rp-reads">${tbl}</table>
+      <table class="rp-res">
+        <tr><th>Iluminância média (Ē)</th><td class="n big">${ok ? fmt(r.E, 2) : '—'} lux</td><th>Ē com tolerância de 15% (mín. – máx.)</th><td class="n">${ok ? `${fmt(r.bands.E15[0], 2)} – ${fmt(r.bands.E15[1], 2)}` : '—'} lux</td></tr>
+        <tr><th>70% de Ē</th><td class="n">${ok ? fmt(lim, 2) : '—'} lux</td><th>70% de Ē com tolerância de 15% (mín. – máx.)</th><td class="n">${ok ? `${fmt(r.bands.lim70_15[0], 2)} – ${fmt(r.bands.lim70_15[1], 2)}` : '—'} lux</td></tr>
+        <tr><th>E mínimo (Quadro 1)</th><td class="n">${fmt(S.Emin, 0)} lux</td><th>Com tolerância de 10%</th><td class="n">${fmt(S.Emin * 0.9, 0)} lux</td></tr>
+      </table>
+      ${r.note ? `<p class="rp-note">${esc(r.note)}</p>` : ''}
+      ${S.task?.length ? `<p class="rp-note">Leituras na área da tarefa: ${S.task.map((x) => fmt(x, 1)).join('; ')} lux.</p>` : ''}
+      ${(r.checks || []).length ? `<table class="rp-chk"><tr><th>Critério (NHO-11, item 5)</th><th>Resultado</th><th>Situação</th></tr>${r.checks.map((c) => `<tr><td>${esc(c.label)}</td><td>${esc(c.detail)}</td><td class="${c.ok === null ? '' : c.ok ? 'ok' : 'bad'}">${c.ok === null ? 'caso a caso' : c.ok ? 'ATENDE' : 'NÃO ATENDE'}</td></tr>`).join('')}</table>` : ''}
+    </div>`;
+}
+
+// ---------------- documento ----------------
+export function reportHTML(app, rel, ctx = {}, { edit = false, foto = null } = {}) {
+  const S = app.state; const N = app.NORM; const cfg = N.configById(S.config); const r = app.results(); const env = r.env || {};
+  const local = rel.local || env.nome || 'ambiente avaliado'; const ok = isFinite(r.E); const lim = r.bands?.lim70;
+  const key = curKey(app); const all = allConds(app); const done = completeConds(app);
+  const keys = done.includes(key) ? done : [key, ...done]; keys.sort((a, b) => ['noturno', 'diurno-nublado', 'diurno-ensolarado'].indexOf(a) - ['noturno', 'diurno-nublado', 'diurno-ensolarado'].indexOf(b));
+  const quadros = keys.map((k) => quadroHTML(app, k === key ? r : resultsFor(app, all[k], k), k === key ? S.values : all[k], { title: COND_SHEET[k] + (keys.length > 1 && k === key ? ' (condição do parecer)' : ''), croqui: k === key })).join('');
+  const verdCls = r.verdict === 'atende' ? 'ok' : r.verdict === 'nao-atende' ? 'bad' : r.verdict === 'inconclusivo' ? 'warn' : '';
+  const verdTxt = { atende: 'ATENDE À NHO-11', 'nao-atende': 'NÃO ATENDE À NHO-11', inconclusivo: 'AVALIAÇÃO INCONCLUSIVA' }[r.verdict] || 'AVALIAÇÃO INCOMPLETA';
   const outros = String(rel.outros || '').split('\n').map((x) => x.trim()).filter(Boolean);
   const verdOk = r.verdict === 'atende';
-  const NM = cfg.layout === 'grid' || cfg.layout === 'continuous' ? `N = ${S.N} (luminárias por fila) · M = ${S.M} (filas)` : cfg.layout === 'single' || cfg.layout === 'continuous1' ? `N = ${S.N} (luminárias na linha)` : cfg.layout === 'luminous' ? `L = ${fmt(S.room.L, 2)} m · W = ${fmt(S.room.W, 2)} m` : '';
-  const svg = croquiFromApp(app, { dark: false, idPrefix: 'rel' });
   const fotoHTML = foto ? `<figure class="rp-photo"><img src="${foto}" alt="Foto do ambiente avaliado"><figcaption>Foto do ambiente avaliado</figcaption></figure>` : `<div class="rp-photo-empty">Foto do ambiente avaliado</div>`;
   return `<article class="rp-doc rp-model" lang="pt-BR">
   ${rel.instituicao ? `<div class="rp-inst">${esc(rel.instituicao)}</div>` : edit ? `<div class="rp-inst rp-inst-empty">(cabeçalho institucional opcional — sem logotipo)</div>` : ''}
@@ -148,7 +197,7 @@ export function reportHTML(app, rel, ctx = {}, { edit = false, foto = null } = {
 
   <section><h2>3. CRITÉRIOS E PROCEDIMENTOS</h2>
     <p>O critério utilizado para avaliação do nível de iluminamento no(a) ${esc(local)} é a medição ponto a ponto nas diferentes tarefas e a comparação com os valores mínimos exigidos correspondentes ao valor da iluminância mínima E (lux) para as tarefas apresentadas no Quadro 1 da NHO-11, sendo permitida uma tolerância de 10% abaixo desse valor.</p>
-    <p>A iluminância média (Ē) foi determinada pelo método do Anexo 1 da NHO-11 — configuração ${cfg.id}: ${esc(lower1(cfg.name))} (Figura ${cfg.fig}), com ${cfg.points.length} pontos de medição. As leituras foram realizadas com a fotocélula na horizontal, a 0,75 m do piso. As leituras na área da tarefa não podem ser inferiores a 70% de Ē, e a razão entre a maior leitura e Ē não deve ser superior a 5:1${S.continuous ? '; em áreas com tarefas contínuas, nenhuma leitura pode ser inferior a 200 lux' : ''}.</p>
+    <p>A iluminância média (Ē) foi determinada pelo método do Anexo 1 da NHO-11 — configuração ${cfg.id}: ${esc(lower1(cfg.name))} (Figura ${cfg.fig}), com ${cfg.points.length} pontos de medição. A avaliação foi realizada no período ${condFrase(S)}${rel.h1 ? `, das ${esc(rel.h1)}${rel.h2 ? ` às ${esc(rel.h2)}` : ''}` : ''} (${keys.length > 1 ? 'foram também registradas as leituras da ' + keys.filter((k) => k !== key).map((k) => COND_LONG[k]).join(' e da ') : 'item 6.2 da NHO-11: condição mais desfavorável'}). As leituras foram realizadas com a fotocélula na horizontal, a 0,75 m do piso. As leituras na área da tarefa não podem ser inferiores a 70% de Ē, e a razão entre a maior leitura e Ē não deve ser superior a 5:1${S.continuous ? '; em áreas com tarefas contínuas, nenhuma leitura pode ser inferior a 200 lux' : ''}.</p>
   </section>
 
   <section><h2>4. DESCRIÇÃO DO AMBIENTE</h2>
@@ -159,31 +208,13 @@ export function reportHTML(app, rel, ctx = {}, { edit = false, foto = null } = {
   <section class="rp-pb"><h2>5. DADOS E PARÂMETROS OBTIDOS NA AVALIAÇÃO</h2>
     ${editable(rel, 'prelim', prelimText(app, rel), edit)}
     <p>A iluminância média encontrada no ambiente avaliado foi de <b>${ok ? fmt(r.E, 2) : '—'} lux</b>.</p>
-    <div class="rp-ead">
-      <div class="rp-ead-h">QUADRO DE CÁLCULO DA ILUMINÂNCIA MÉDIA — NHO-11, ANEXO 1</div>
-      <table class="rp-kv2">
-        <tr><th>Tipo de ambiente (Quadro 1)</th><td>${esc(env.nome || '—')}</td><th>E mínimo</th><td class="n"><b>${fmt(S.Emin, 0)} lux</b>${env.IRC ? ` · IRC ≥ ${esc(env.IRC)}` : ''}</td></tr>
-        <tr><th>Área (lado × lado)</th><td>${fmt(S.room.L, 2)} m × ${fmt(S.room.W, 2)} m = <b>${fmt(r.area, 2)} m²</b></td><th>Área ± 3%</th><td class="n">${fmt(r.areaBand[0], 2)} – ${fmt(r.areaBand[1], 2)} m²</td></tr>
-      </table>
-      <figure class="rp-cro">${svg}<figcaption><span><i style="background:${GROUP_COLORS.P}"></i>P</span><span><i style="background:${GROUP_COLORS.T}"></i>T</span><span><i style="background:${GROUP_COLORS.Q}"></i>Q</span><span><i style="background:${GROUP_COLORS.R}"></i>R</span><span>Croqui — Fig. ${cfg.fig} (${esc(cfg.short)})</span></figcaption></figure>
-      <div class="rp-form"><div class="rp-form-k">Fórmula da iluminância média</div><div>${fracHTML(cfg.formula)}</div><div class="rp-form-nm">${NM}</div>
-        <div>${fracHTML('Ē = ' + expandedUI(cfg.id, r.groups, { N: S.N, M: S.M, L: S.room.L, W: S.room.W }))} &nbsp;⇒&nbsp; <b>Ē = ${ok ? fmt(r.E, 2) : '—'} lux</b></div></div>
-      <table class="rp-reads">${tbl}</table>
-      <table class="rp-res">
-        <tr><th>Iluminância média (Ē)</th><td class="n big">${ok ? fmt(r.E, 2) : '—'} lux</td><th>Ē com tolerância de 15% (mín. – máx.)</th><td class="n">${ok ? `${fmt(r.bands.E15[0], 2)} – ${fmt(r.bands.E15[1], 2)}` : '—'} lux</td></tr>
-        <tr><th>70% de Ē</th><td class="n">${ok ? fmt(lim, 2) : '—'} lux</td><th>70% de Ē com tolerância de 15% (mín. – máx.)</th><td class="n">${ok ? `${fmt(r.bands.lim70_15[0], 2)} – ${fmt(r.bands.lim70_15[1], 2)}` : '—'} lux</td></tr>
-        <tr><th>E mínimo (Quadro 1)</th><td class="n">${fmt(S.Emin, 0)} lux</td><th>Com tolerância de 10%</th><td class="n">${fmt(S.Emin * 0.9, 0)} lux</td></tr>
-      </table>
-      ${r.note ? `<p class="rp-note">${esc(r.note)}</p>` : ''}
-      ${S.task?.length ? `<p class="rp-note">Leituras na área da tarefa: ${S.task.map((x) => fmt(x, 1)).join('; ')} lux.</p>` : ''}
-      ${(r.checks || []).length ? `<table class="rp-chk"><tr><th>Critério (NHO-11, item 5)</th><th>Resultado</th><th>Situação</th></tr>${r.checks.map((c) => `<tr><td>${esc(c.label)}</td><td>${esc(c.detail)}</td><td class="${c.ok === null ? '' : c.ok ? 'ok' : 'bad'}">${c.ok === null ? 'caso a caso' : c.ok ? 'ATENDE' : 'NÃO ATENDE'}</td></tr>`).join('')}</table>` : ''}
-    </div>
+    ${quadros}
   </section>
 
   <section class="rp-pb"><h2>6. PARECER TÉCNICO</h2>
-    <div class="rp-verdict ${ok ? (verdOk ? 'ok' : 'bad') : ''}">${ok ? (verdOk ? 'ATENDE À NHO-11' : 'NÃO ATENDE À NHO-11') : 'AVALIAÇÃO INCOMPLETA'}</div>
+    <div class="rp-verdict ${verdCls}">${verdTxt}</div>
     ${editable(rel, 'parecer', parecerText(app, r), edit)}
-    ${ok && !verdOk ? `<h3>Recomendações</h3><ul>${parecer(app, r, ctx).recs.map((x) => `<li>${esc(x)}</li>`).join('')}</ul>` : ''}
+    ${ok && r.verdict === 'nao-atende' ? `<h3>Recomendações</h3><ul>${parecer(app, r, ctx).recs.map((x) => `<li>${esc(x)}</li>`).join('')}</ul>` : ''}
   </section>
 
   <section class="rp-sign">
@@ -246,6 +277,7 @@ export const REPORT_CSS = `
 .rp-note{font-size:9.5pt;color:#444}
 .rp-verdict{display:inline-block;margin:2px 0 8px;padding:5px 14px;font-weight:700;font-size:12pt;border:2px solid #9aa3b0;color:#444}
 .rp-verdict.ok{border-color:#00B050;color:#00843f;background:#e6f7ee;-webkit-print-color-adjust:exact;print-color-adjust:exact}
+.rp-verdict.warn{border-color:#c98a00;color:#8a5a00;background:#fff4dc;-webkit-print-color-adjust:exact;print-color-adjust:exact}
 .rp-verdict.bad{border-color:#c00000;color:#c00000;background:#fdecec;-webkit-print-color-adjust:exact;print-color-adjust:exact}
 .rp-sign{margin-top:38px;text-align:center;break-inside:avoid}
 .rp-sign p{text-align:center;margin:0 0 2px}
@@ -316,7 +348,7 @@ export function openReportStudio(app, { ctx = () => ({}), toast = () => {} } = {
       <fieldset><legend>Informações da empresa</legend><div class="rl-g">${EMPRESA.map(([k, l, full]) => F(k, l, { full })).join('')}</div></fieldset>
       <fieldset><legend>Local e atividade</legend><div class="rl-g">
         ${F('local', 'Identificação do local', { full: true })}${F('unidade', 'Unidade')}${F('atividade', 'Atividade realizada')}
-        ${F('periodo', 'Período', { type: 'select', options: ['noturno', 'diurno', 'diurno e noturno'] })}${F('tipoIlum', 'Tipo de iluminação', { type: 'select', options: ['artificial', 'natural e artificial'] })}
+        ${F('periodo', 'Período de uso do ambiente', { type: 'select', options: ['noturno', 'diurno', 'diurno e noturno'] })}${F('tipoIlum', 'Tipo de iluminação', { type: 'select', options: ['artificial', 'natural e artificial'] })}
         ${F('instalacao', 'Instalação das luminárias', { type: 'select', options: ['sobrepondo o teto', 'embutidas no forro', 'pendentes'] })}
         <div class="rl-f rl-2">${F('portas', 'Portas', { type: 'number' })}${F('janelas', 'Janelas', { type: 'number' })}</div></div></fieldset>
       <fieldset><legend>Equipamento</legend><div class="rl-g">${F('luxModelo', 'Luxímetro (modelo / fabricante)')}${F('certificado', 'Nº do certificado de calibração')}${F('outros', 'Outros equipamentos (um por linha)', { type: 'area' })}</div></fieldset>
