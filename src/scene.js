@@ -33,7 +33,7 @@ export function createStage(canvas, opts = {}) {
   const still = !!opts.still;
 
   const renderer = new THREE.WebGLRenderer({ canvas, antialias: false, powerPreference: 'high-performance', preserveDrawingBuffer: true, stencil: false });
-  const DPR_MAX = quality === 'alta' ? 1.5 : 1.0;
+  const DPR_MAX = quality === 'alta' ? 1.25 : 1.0; // Retina a 2× custava 2,5× mais pixels
   const prLock = parseFloat(qs.get('pr'));
   let pixelRatio = Number.isFinite(prLock) ? prLock : Math.min(devicePixelRatio || 1, DPR_MAX);
   renderer.setPixelRatio(pixelRatio);
@@ -257,7 +257,7 @@ export function createStage(canvas, opts = {}) {
   }
 
   // ---------- desempenho ----------
-  let fc = 0, ft = 0, lowT = 0, highT = 0, last = performance.now();
+  let fc = 0, ft = 0, lowT = 0, highT = 0, last = performance.now(), autoDowngraded = false;
   let fpsT0 = performance.now();
   window.__fps = 0;
   function perf(dt) {
@@ -268,7 +268,8 @@ export function createStage(canvas, opts = {}) {
       if (still || Number.isFinite(prLock) || bootT < 4 || anim) { lowT = highT = 0; return; }
       if (fps < 45) { lowT += 0.5; highT = 0; } else if (fps > 58) { highT += 0.5; lowT = 0; } else { lowT = highT = 0; }
       const maxPR = Math.min(devicePixelRatio || 1, DPR_MAX);
-      if (lowT >= 2 && pixelRatio > 0.7) { pixelRatio = Math.max(0.7, pixelRatio - 0.1); lowT = 0; resize(); }
+      if (lowT >= 2 && pixelRatio > 0.6) { pixelRatio = Math.max(0.6, pixelRatio - 0.15); lowT = 0; resize(); }
+      else if (lowT >= 3 && quality === 'alta' && !autoDowngraded) { autoDowngraded = true; lowT = 0; stage.setQuality('media'); console.info('[render] qualidade média automática (GPU lenta)'); }
       else if (highT >= 2.5 && pixelRatio < maxPR) { pixelRatio = Math.min(maxPR, pixelRatio + 0.15); highT = 0; resize(); }
     }
   }
@@ -307,6 +308,8 @@ export function createStage(canvas, opts = {}) {
     if (moving) settleT = 0; else if (settleT >= 0 && (settleT += dt) > 0.25) { settleT = -1; meter(); }
     lastCam.copy(camera.matrixWorld); lastProj.copy(camera.projectionMatrix); lastMotion = motionSigVal;
     staticN = moving ? 0 : staticN + 1;
+    // cena parada há ~0,5 s: redesenha só 1 a cada 3 quadros (libera GPU/CPU para a interface; a imagem não muda)
+    if (!still && staticN > 30 && staticN % 3 !== 0) return;
     const heavy = staticN < 3 || staticN % 8 === 0;
     if (heavy) refl.update(camera);
     if (post.gtao) post.gtao.enabled = heavy;
