@@ -111,3 +111,26 @@ export function buildConduit(col, pts, r = 0.012) {
   for (let i = 0; i < uv.count; i++) uv.setXY(i, uv.getX(i) * len, uv.getY(i) * 2 * Math.PI * r);
   (col.conduit ||= []).push(g);
 }
+
+// ---------- quadro branco (moldura de alumínio 25 mm, cantoneiras plásticas cinza, ímã azul e botão no canto) ----------
+export function buildWhiteboard(col, frame, w = 2.4, h = 1.2) {
+  const fw = 0.025, fd = 0.020, bd = 0.016;
+  addPlane(col, 'wbShadow', w + 0.07, h + 0.06, 0, -0.012, 0.0012, frame);
+  addBox(col, 'wbBack', w - 0.02, h - 0.02, bd - 0.004, 0, 0, (bd - 0.004) / 2, frame);   // chapa/compensado
+  const surf = new THREE.PlaneGeometry(w - 2 * fw + 0.004, h - 2 * fw + 0.004); surf.translate(0, 0, bd + 0.0005); surf.applyMatrix4(frame); (col.wbSurf ||= []).push(surf);
+  // moldura (face com chanfro: perfil externo + lábio interno levemente mais escuro)
+  addBox(col, 'wbFrame', w, fw, fd, 0, h / 2 - fw / 2, fd / 2, frame); addBox(col, 'wbFrame', w, fw, fd, 0, -h / 2 + fw / 2, fd / 2, frame);
+  addBox(col, 'wbFrame', fw, h - 2 * fw, fd, -w / 2 + fw / 2, 0, fd / 2, frame); addBox(col, 'wbFrame', fw, h - 2 * fw, fd, w / 2 - fw / 2, 0, fd / 2, frame);
+  addBox(col, 'wbLip', w - 2 * fw + 0.004, 0.004, 0.006, 0, h / 2 - fw - 0.001, bd + 0.003, frame); addBox(col, 'wbLip', w - 2 * fw + 0.004, 0.004, 0.006, 0, -h / 2 + fw + 0.001, bd + 0.003, frame);
+  addBox(col, 'wbLip', 0.004, h - 2 * fw, 0.006, -w / 2 + fw + 0.001, 0, bd + 0.003, frame); addBox(col, 'wbLip', 0.004, h - 2 * fw, 0.006, w / 2 - fw - 0.001, 0, bd + 0.003, frame);
+  // cantoneiras plásticas cinza
+  for (const sx of [-1, 1]) for (const sy of [-1, 1]) {
+    addBox(col, 'wbCorner', 0.042, 0.042, fd + 0.006, sx * (w / 2 - 0.017), sy * (h / 2 - 0.017), (fd + 0.006) / 2, frame);
+  }
+  // ímã azul (no topo da moldura, perto do canto superior direito) e botão/rebite cinza no canto
+  addBox(col, 'wbMagnet', 0.032, 0.014, 0.010, w / 2 - 0.11, h / 2 - fw / 2, fd + 0.005, frame);
+  const btn = new THREE.CylinderGeometry(0.009, 0.010, 0.006, 20); btn.rotateX(Math.PI / 2); btn.translate(w / 2 - fw - 0.022, h / 2 - fw - 0.03, bd + 0.003); btn.applyMatrix4(frame); (col.wbCorner ||= []).push(btn);
+  const r2 = new THREE.CylinderGeometry(0.004, 0.004, 0.004, 12); r2.rotateX(Math.PI / 2); r2.translate(-w / 2 + fw + 0.02, -h / 2 + fw + 0.02, bd + 0.002); r2.applyMatrix4(frame); (col.wbCorner ||= []).push(r2);
+}
+// furinho de parafuso antigo (disco escuro raso)
+export function addHole(col, frame, x, y, r = 0.0035) { const g = new THREE.CircleGeometry(r, 10); g.translate(x, y, 0.0009); g.applyMatrix4(frame); (col.hole ||= []).push(g); }

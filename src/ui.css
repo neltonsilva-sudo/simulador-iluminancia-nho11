@@ -528,7 +528,7 @@ select.inp { appearance: none; padding-right: 30px; background-image: url("data:
 
 /* ---------------- condição da avaliação (item 6.2) ---------------- */
 .cond-h { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-bottom: 9px; }
-.cond-h .sh { margin: 0; }
+.cond-h .sh { margin: 0; white-space: nowrap; }
 .cond-g { display: grid; grid-template-columns: 1fr 1fr; gap: 7px; }
 .seg2 { grid-template-columns: 1fr 1fr; }
 .seg2 button { display: inline-flex; align-items: center; justify-content: center; gap: 6px; }

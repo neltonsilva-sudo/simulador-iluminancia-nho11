@@ -3,15 +3,14 @@
 //   • céu: cada janela é uma fonte difusa voltada para dentro, exitância M = daylight · extLux · vertRatio · tau
 //     (DAYLIGHT; spec.daylightLux sobrepõe) → RectAreaLight com power = M · área do vão (lm), cor ≈ céu encoberto 6500 K;
 //   • sol (só ensolarado): DirectionalLight com a direção e a iluminância de SUN (Edn · tau · daylight/2,5, lux na normal),
-//     sombra recortada pelas janelas: “sombras-fantasma” das malhas da SALA (mesma geometria, camada 7, só o mapa de sombra
-//     do sol as enxerga) — paredes, caixilhos, grades, teto. Cadeiras e mesas fazem sombra nas manchas de sol.
+//     sombra recortada pelas janelas: “sombras-fantasma” das malhas da SALA (mesma geometria, material invisível —
+//     colorWrite/depthWrite desligados; o WebGLShadowMap testa as camadas da câmera principal, então ficam na camada 0) — paredes, caixilhos, grades, teto. Cadeiras e mesas fazem sombra nas manchas de sol.
 // Transição suave (~0,8 s) ao trocar noturno ↔ diurno / nublado ↔ ensolarado.
 import * as THREE from 'three';
 import * as PH from './photometry.js';
 import * as ROOM from './room.js';
 import { cctColor } from './lum_color.js';
 
-const PROXY_LAYER = 7;
 const SKY_CCT = 6500, SUN_CCT = 5500;
 
 export function buildDaylight(stage, parent, { mapSize = 2048 } = {}) {
@@ -24,7 +23,6 @@ export function buildDaylight(stage, parent, { mapSize = 2048 } = {}) {
   const sun = new THREE.DirectionalLight(sunCol, 0); sun.name = 'lum-sun';
   sun.castShadow = false;   // liga só no ensolarado (orçamento de sombras do RENDER: máx. 4)
   sun.shadow.mapSize.set(mapSize, mapSize); sun.shadow.bias = -0.0004; sun.shadow.normalBias = 0.025;
-  sun.shadow.camera.layers.enable(PROXY_LAYER);
   group.add(sun, sun.target);
 
   const st = { day: 0, dayCur: 0, sun: 0, sunCur: 0, wins: [], M1: 0, sunE1: 0, room: null, sunny: false };
@@ -58,7 +56,7 @@ export function buildDaylight(stage, parent, { mapSize = 2048 } = {}) {
       const m = Array.isArray(o.material) ? o.material[0] : o.material, nm = `${o.name} ${m?.name || ''}`;
       if (/glass|vidro|film|ext|exterior|floor|piso|night|poster|switch/i.test(nm) || m?.transparent) return;
       const p = new THREE.Mesh(o.geometry, proxyMat); p.matrixAutoUpdate = false; p.matrix.copy(o.matrixWorld);
-      p.castShadow = true; p.receiveShadow = false; p.layers.set(PROXY_LAYER); p.userData.noEnv = true; p.frustumCulled = false;
+      p.castShadow = true; p.receiveShadow = false; p.renderOrder = -10; p.userData.noEnv = true; p.frustumCulled = false;
       proxies.add(p); n++;
     });
     return n;

@@ -18,6 +18,22 @@ Vistas: `ref1` (mesmo enquadramento da foto: do fundo da sala, perto da porta, o
 ocupando ~55% da imagem), `overview`, `top` (planta), `ceiling`, `point:<id>` (opts.target={x,z} opcional — RENDER deve
 buscar o ponto em `window.__sim.points()` se não vier), `orbit` (opts.orbit="ang,h,r,tx,ty,tz,fov"). Animação suave
 quando opts.animate. Mais: `stage.addPostPass?`, `stage.setExposure(v)`. `window.__fps` deve ser atualizado.
+RENDER (adições, implementadas): `stage.setExposure(v)` = compensação linear sobre a exposição calibrada (1 = padrão;
+`'auto'` remede). Exposição física K=0,019 (Ē≈220 lx → paredes ≈200/255), tone mapping Neutral; AE de celular com limites
+(K_PHYS/60 … 1,25·K_PHYS, faixa morta ±60% à noite) medido sempre pelo quadro ref1 → igual em todas as vistas; reavaliado a
+cada mudança de cena / evento `daylight`. `stage.exposure`, `stage.exposureTarget`, `stage.setToneMapping('neutral'|'agx'|'aces')`.
+`stage.refreshEnv()` — IBL PMREM capturado da própria sala (2 rebatimentos); chamado sozinho com debounce quando a cena muda.
+`stage.floorReflection.apply(material,{strength})` — reflexo planar (radiância especular + clearcoat); auto-aplicado a
+meshes com `userData.floor===true` ou nome /piso|floor/ (SALA: `room.floor` já é detectado).
+Marcas por objeto: `userData.noAO` (sem AO), `userData.noEnv` (fora da captura IBL), `userData.noReflect` (fora do reflexo).
+Geometria fina (barra/tubo: 2ª dimensão < 6 cm) recebe AO reduzida automaticamente.
+`stage.shadowBudget` {max: 4|2, mapSize: 1024|512} — luzes com sombra além do orçamento têm castShadow desligado.
+`stage.setInsets({left})` / `null` = auto — área coberta pela UI à esquerda; vistas point/top/overview/ceiling centram na
+área livre (setViewOffset). Guarda HDR global: nenhum material grava NaN/Inf nem > 30000 (limite do HalfFloat).
+Orçamento de desempenho: cada RectAreaLight (LTC) custa ~3 ms a 1280×720 → manter ≤ 8 por cena; MSAA desligado (SMAA).
+ref1 calibrada na foto (sobreposição de bordas + 13 marcos): câmera em x=−1,90, z=−L/2+8,65, y=1,60, guinada 22° à direita,
++5° para cima, FOV vertical 47°; a foto é um 4:3 reamostrado para 906×358 (squash 1,8 só quando o canvas tem proporção ≥ 2,2:1).
+URL: `tm=` tone mapping, `exp=` compensação, `wb=r,g,b`, `pr=` resolução fixa, `r1=back,x,h,yaw,pitch,vfov,squash` (calibração).
 
 ## spec (luminárias / fotometria)
 `spec = {...LUM_TYPES[i], flux, cct, on, dim, config}` — `flux` em lm por luminária, `cct` em K. `config===6` → teto

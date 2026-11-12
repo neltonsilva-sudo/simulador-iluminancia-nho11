@@ -4,9 +4,16 @@ import * as ROOM from './room.js';
 
 /** Aberturas da sala: room.getOpenings(room) (dono SALA) ou, na falta, o arranjo atual da sala real
  *  (porta na parede esquerda junto à frente; 3 janelas à esquerda e 4 à direita). */
-export function roomOpenings(room) { try { const l = ROOM.getOpenings?.(room); return Array.isArray(l) && l.length ? l : null; } catch { return null; } }
+export function roomOpenings(room) {
+  try {
+    const l = ROOM.getOpenings?.(room); if (!Array.isArray(l) || !l.length) return null;
+    // formato tolerante: {kind:'door'|'window'|'porta'|'janela', wall, z | at, width | w}
+    return l.map((o) => ({ kind: /^(door|porta)$/i.test(o.kind) ? 'porta' : 'janela', wall: o.wall || (o.x < 0 ? 'left' : 'right'),
+      at: o.at ?? (+o.z + room.L / 2) / room.L, w: o.w ?? o.width ?? 0.9 })).filter((o) => isFinite(o.at));
+  } catch { return null; }
+}
 export function openingsFor(room) {
-  try { const l = ROOM.getOpenings?.(room); if (Array.isArray(l) && l.length) return l; } catch {}
+  const l = roomOpenings(room); if (l) return l;
   return [
     { kind: 'porta', wall: 'left', at: 0.133, w: 0.9 },
     ...[0.389, 0.642, 0.892].map((at) => ({ kind: 'janela', wall: 'left', at, w: 0.95 })),

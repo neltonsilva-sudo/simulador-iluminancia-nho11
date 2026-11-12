@@ -6,11 +6,13 @@
 import * as THREE from 'three';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import * as TX from './room_tex.js';
-import { addBox, addPlane, wallFrame, buildWindow, buildDoor, buildPoster, buildSwitch, buildConduit } from './room_parts.js';
+import { addBox, addPlane, wallFrame, buildWindow, buildDoor, buildSwitch, buildConduit, buildWhiteboard, addHole } from './room_parts.js';
 
 const WALL_T = 0.075;          // espessura do painel sanduíche (profundidade do vão)
 const WIN_W = 1.30, WIN_H = 0.95, WIN_HEAD = 2.20;  // janelas de correr (proporção da foto ref1) — verga a 2,06 m
 const DOOR_W = 0.84, DOOR_H = 2.10;
+const BAND = 1.45;            // altura da divisa de tom da parede (foto ref3)
+const WB_W = 2.40, WB_H = 1.20, WB_BOTTOM = 0.90; // quadro branco (foto ref3)
 const CH_D = 0.042;            // altura dos perfis C longitudinais (encostados no teto)
 const BEAM_D = 0.075;          // altura das vigas C transversais (abaixo dos longitudinais)
 
@@ -63,7 +65,16 @@ function makeMaterials() {
   M.extR = extMat(TX.exteriorTexture(), 0.16); // parede x=+W/2 (à noite: muro externo fracamente iluminado pela sala)
   M.extR.uniforms.g.value.z = 1.15;            // lado da sombra no dia ensolarado
   M.filmL = M.film.clone(); M.filmL.name = 'room.filmL'; M.filmR = M.film.clone(); M.filmR.name = 'room.filmR';
-  for (let v = 0; v < 4; v++) M['poster' + v] = new THREE.MeshPhysicalMaterial({ name: 'room.poster' + v, map: TX.posterTexture(v), roughness: 0.38, clearcoat: 0.5, clearcoatRoughness: 0.12 });
+  { const wb = TX.whiteboardTextures();
+    M.wbSurf = new THREE.MeshPhysicalMaterial({ name: 'room.wbSurf', color: 0xffffff, map: wb.map, roughnessMap: wb.roughnessMap, roughness: 1, clearcoat: 1, clearcoatRoughness: 0.035, specularIntensity: 1, envMapIntensity: 1.2 });
+    M.wbBack = new THREE.MeshStandardMaterial({ name: 'room.wbBack', color: 0x8d8f90, roughness: 0.7 });
+    M.wbFrame = new THREE.MeshStandardMaterial({ name: 'room.wbFrame', color: 0xc6c9cc, roughness: 0.34, metalness: 0.6, normalMap: g.normalMap, normalScale: new THREE.Vector2(0.08, 0.08) });
+    M.wbLip = new THREE.MeshStandardMaterial({ name: 'room.wbLip', color: 0x8e9295, roughness: 0.4, metalness: 0.5 });
+    M.wbCorner = new THREE.MeshStandardMaterial({ name: 'room.wbCorner', color: 0x7d8083, roughness: 0.55 });
+    M.wbMagnet = new THREE.MeshStandardMaterial({ name: 'room.wbMagnet', color: 0x2b5fd0, roughness: 0.35 });
+    M.wbShadow = new THREE.MeshBasicMaterial({ name: 'room.wbShadow', color: 0x000000, alphaMap: TX.softShadowTexture(), transparent: true, opacity: 0.45, depthWrite: false, polygonOffset: true, polygonOffsetFactor: -1 });
+    M.hole = new THREE.MeshStandardMaterial({ name: 'room.hole', color: 0x2a2b2c, roughness: 0.8, polygonOffset: true, polygonOffsetFactor: -2 }); }
+  // (cartazes A3 removidos a pedido do usuário)
   return M;
 }
 
@@ -224,7 +235,7 @@ export function buildRoom(stage, room) {
       for (let k = 1; k * mod < w.len - 0.01; k++) extraU.push(k * mod);
       for (const h of w.holes) extraU.push(h.u0, h.u1, h.u0 - 0.06, h.u1 + 0.06);
       const us = uniq([...steps(w.len, 0.3), ...extraU], 0, w.len);
-      const extraV = [0.015, 0.04, 0.08, 0.14, 0.22, 0.32, 0.45, H - 0.015, H - 0.04, H - 0.09, H - 0.17, H - 0.3];
+      const extraV = [0.015, 0.04, 0.08, 0.14, 0.22, 0.32, 0.45, BAND - 0.006, BAND + 0.006, H - 0.015, H - 0.04, H - 0.09, H - 0.17, H - 0.3];
       for (const h of w.holes) extraV.push(h.v0, h.v1, h.v1 + 0.05, h.v0 - 0.05);
       const vs = uniq([...steps(H, 0.35), ...extraV], 0, H);
       const pv = (p) => 1 + (hash1(p * 7 + w.seed * 131) - 0.5) * 0.08;
@@ -236,8 +247,9 @@ export function buildRoom(stage, room) {
         // sombra suave sob a verga e ao redor dos vãos
         for (const h of w.holes) { const dx = Math.max(h.u0 - u, 0, u - h.u1), dy = Math.max(h.v0 - v, 0, v - h.v1); const d = Math.hypot(dx, dy); a *= 1 - 0.05 * Math.exp(-d / 0.05); }
         a *= pv(pnl) * (1 + (vn2(u * 0.8, v * 0.8, w.seed) - 0.5) * 0.035) * (1 - 0.025 * Math.abs(((uc % mod) / mod) - 0.5) * 2);
+        a *= v < BAND ? 0.945 : 1.0; // faixa inferior levemente mais acinzentada/suja (2 tons, como na foto do quadro)
         const dirt = Math.exp(-v / 0.12) * 0.06 + Math.max(0, 1 - v / 0.4) ** 2 * 0.05 * (0.5 + vn2(u * 3.1, 7.7, w.seed + 40));
-        return [a * (1 - dirt * 0.6), a * (1 - dirt * 0.8), a * (1 - dirt), pr(pnl) * (1 + Math.max(0, 1 - v / 0.4) * 0.25)];
+        return [a * (1 - dirt * 0.6), a * (1 - dirt * 0.8) * (v < BAND ? 0.997 : 1), a * (1 - dirt) * (v < BAND ? 0.99 : 1), pr(pnl) * (1 + Math.max(0, 1 - v / 0.4) * 0.25)];
       };
       const col = {};
       const surf = gridSurface({ o: w.o, ud: w.ud, vd: up, us, vs, holes: w.holes, color, uvOff: [w.uvo, 0], cs: 4 });
@@ -371,22 +383,28 @@ export function buildRoom(stage, room) {
 
   // ---- quadros, interruptor, sensores (posições tiradas da foto ref1, em frações do comprimento da parede) ----
   function decorate(w, col, { L, W, H, zl, zr, doorC }) {
-    const yP = (y) => Math.min(y, H - 0.4);
     const F = (u, v) => wallFrame(w, u, v, 0);
+    const holes = (pts) => pts.forEach(([u, v]) => { if (v > 0.2 && v < H - 0.1 && u > 0.1 && u < w.len - 0.1) addHole(col, F(0, 0), u, v); });
     if (w.id === 'front') {
-      [[0.124, 1.90, 0], [0.432, 1.68, 1], [0.700, 1.94, 3], [0.893, 1.94, 2]].forEach(([f, y, v]) => buildPoster(col, F(f * W, yP(y)), v));
-      buildSwitch(col, F(Math.min(0.168 * W, 0.124 * W + 0.32), Math.min(1.72, H - 0.5)));
+      // quadro branco centralizado (largura limitada em salas estreitas), borda inferior a 0,90 m
+      const bw = Math.min(WB_W, W - 1.1), bh = Math.min(WB_H, H - WB_BOTTOM - 0.35), uc = W / 2, vc = WB_BOTTOM + bh / 2;
+      buildWhiteboard(col, F(uc, vc), bw, bh);
+      // interruptor à esquerda do quadro (fora da moldura)
+      const uSw = Math.max(0.2, Math.min(0.168 * W, uc - bw / 2 - 0.35));
+      buildSwitch(col, F(uSw, Math.min(1.40, H - 0.5)));
+      // furinhos de parafusos antigos (cartazes retirados) — poucos
+      holes([[uc - bw / 2 - 0.18, vc + 0.75], [uc - bw / 2 + 0.55, vc + 0.68], [uc + 0.35, vc + 0.71], [uc + bw / 2 - 0.42, vc + 0.69], [uc + bw / 2 - 0.20, vc + 0.70],
+        [uc + bw / 2 + 0.25, vc + 0.12], [uc - bw / 2 - 0.25, vc - 0.15], [0.124 * W - 0.15, 2.12], [0.124 * W + 0.15, 2.12], [0.893 * W - 0.15, 2.16]]);
     } else if (w.id === 'right') {
-      if (zr.length && zr[0] - WIN_W / 2 + L / 2 > 0.7) buildPoster(col, F(0.45, yP(1.95)), 0);
-      if (zr.length >= 2) buildPoster(col, F((zr[0] + zr[1]) / 2 + L / 2, yP(1.93)), 3);
       addBox(col, 'switch', 0.06, 0.06, 0.03, 0.22, Math.min(2.0, H - 0.4), 0.015, F(0, 0)); // sensor/caixa escura perto do canto (foto)
+      if (zr.length >= 2) { const u = (zr[0] + zr[1]) / 2 + L / 2; holes([[u - 0.15, 2.15], [u + 0.15, 2.15], [u + 0.14, 1.70]]); }
     } else if (w.id === 'left') {
-      for (let i = 0; i + 1 < zl.length; i += 2) buildPoster(col, F(L / 2 - (zl[i] + zl[i + 1]) / 2, yP(1.92)), (i + 1) % 4);
-      // interruptor junto à porta nova, no lado da maçaneta (para o fundo da sala, z maior → u menor)
+      // interruptor junto à porta, no lado da maçaneta (para o fundo da sala, z maior → u menor)
       const uSw = L / 2 - doorC - DOOR_W / 2 - 0.22;
       if (!zl.length || uSw > L / 2 - zl[0] + WIN_W / 2 + 0.06) buildSwitch(col, F(uSw, 1.15));
+      if (zl.length >= 2) { const u = L / 2 - (zl[0] + zl[1]) / 2; holes([[u - 0.16, 2.14], [u + 0.16, 2.14]]); }
     } else if (w.id === 'back') {
-      buildPoster(col, F(W * 0.62, yP(1.85)), 2);
+      holes([[W * 0.62 - 0.15, 2.07], [W * 0.62 + 0.15, 2.07], [W * 0.62 - 0.15, 1.63]]);
     }
   }
 

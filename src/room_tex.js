@@ -334,3 +334,46 @@ export function nightTexture() {
     return tex(c, { wrap: false });
   });
 }
+
+// ---------- QUADRO BRANCO: laminado branco brilhante com fantasmas de pincel apagado, riscos e pontinhos ----------
+// map (albedo) + roughnessMap (G) — 2048×1024 cobre a superfície inteira (u 0..1 = largura, v 0..1 = altura)
+export function whiteboardTextures() {
+  return once('wb', () => {
+    const W = 2048, H = 1024, rnd = rng(3131);
+    const a = canvas(W, H), g = a.getContext('2d'), r = canvas(W, H), gr = r.getContext('2d');
+    const base = g.createLinearGradient(0, 0, W, H); base.addColorStop(0, '#f6f7f7'); base.addColorStop(1, '#f1f2f2'); g.fillStyle = base; g.fillRect(0, 0, W, H);
+    gr.fillStyle = 'rgb(18,18,18)'; gr.fillRect(0, 0, W, H); // rugosidade ≈0,07
+    const stroke = (ctx, col, lw, blur, pts) => { ctx.save(); ctx.filter = `blur(${blur}px)`; ctx.strokeStyle = col; ctx.lineWidth = lw; ctx.lineCap = 'round'; ctx.lineJoin = 'round'; ctx.beginPath(); pts.forEach(([x, y], i) => (i ? ctx.lineTo(x, y) : ctx.moveTo(x, y))); ctx.stroke(); ctx.restore(); };
+    // névoa geral de apagador (faixas largas, curvas, muito suaves)
+    for (let k = 0; k < 26; k++) { const x = rnd() * W, y = rnd() * H, len = 200 + rnd() * 600, ang = (rnd() - 0.5) * 0.6, pts = [];
+      for (let t = 0; t <= 6; t++) pts.push([x + Math.cos(ang) * len * t / 6 + Math.sin(t * 1.3 + k) * 30, y + Math.sin(ang) * len * t / 6 + Math.cos(t + k) * 40]);
+      stroke(g, `rgba(150,156,162,${0.012 + rnd() * 0.02})`, 50 + rnd() * 90, 22, pts); stroke(gr, `rgba(70,70,70,${0.25 + rnd() * 0.25})`, 60 + rnd() * 90, 18, pts); }
+    // fantasmas de escrita (linhas de "texto" apagadas)
+    for (let line = 0; line < 9; line++) { const y0 = 120 + line * 95 + rnd() * 20; let x = 140 + rnd() * 200; const xe = W - 200 - rnd() * 500;
+      while (x < xe) { const ww = 30 + rnd() * 90, pts = []; for (let t = 0; t <= 8; t++) pts.push([x + ww * t / 8, y0 + Math.sin(t * 2.1 + x) * 14]); stroke(g, `rgba(120,128,136,${0.008 + rnd() * 0.018})`, 5, 2.5, pts); x += ww + 18 + rnd() * 30; } }
+    // marcas mais escuras (pincel mal apagado), como no centro-direita da foto
+    for (let k = 0; k < 3; k++) { const x = W * (0.45 + rnd() * 0.25), y = H * (0.3 + rnd() * 0.35), pts = [];
+      for (let t = 0; t <= 6; t++) pts.push([x + (rnd() - 0.5) * 40 + t * (rnd() - 0.3) * 10, y + t * (25 + rnd() * 25)]);
+      stroke(g, `rgba(80,88,98,${0.04 + rnd() * 0.07})`, 6 + rnd() * 10, 4 + rnd() * 4, pts); }
+    stroke(g, 'rgba(60,75,95,0.13)', 8, 3.5, [[W * 0.585, H * 0.38], [W * 0.59, H * 0.47], [W * 0.592, H * 0.58]]);
+    stroke(g, 'rgba(120,130,140,0.10)', 30, 10, [[W * 0.57, H * 0.27], [W * 0.6, H * 0.22], [W * 0.63, H * 0.25]]);
+    // traço azul/verde residual fino e vertical (canto inferior esquerdo da foto)
+    stroke(g, 'rgba(70,140,170,0.22)', 2.5, 1, [[W * 0.31, H * 0.86], [W * 0.312, H * 0.93], [W * 0.311, H * 0.98]]);
+    // riscos finos (pegam brilho diferente)
+    for (let k = 0; k < 40; k++) { const x = rnd() * W, y = rnd() * H, l = 15 + rnd() * 80, an = rnd() * Math.PI; const pts = [[x, y], [x + Math.cos(an) * l, y + Math.sin(an) * l]];
+      stroke(g, `rgba(150,150,150,${0.05 + rnd() * 0.08})`, 1.2, 0, pts); stroke(gr, 'rgba(110,110,110,0.8)', 1.5, 0, pts); }
+    // pontinhos (ponta de pincel, sujeira)
+    for (let k = 0; k < 140; k++) { g.fillStyle = `rgba(${60 + rnd() * 60},${60 + rnd() * 60},${70 + rnd() * 60},${0.15 + rnd() * 0.45})`; g.beginPath(); g.arc(rnd() * W, rnd() * H, 0.8 + rnd() * 2.2, 0, Math.PI * 2); g.fill(); }
+    const map = tex(a, { wrap: false }), roughnessMap = tex(r, { wrap: false, srgb: false });
+    return { map, roughnessMap };
+  });
+}
+
+// sombra de contato suave (alfa) para o quadro: retângulo desfocado, mais forte embaixo
+export function softShadowTexture() {
+  return once('wbShadow', () => {
+    const W = 512, H = 256, c = canvas(W, H), g = c.getContext('2d');
+    g.filter = 'blur(7px)'; g.fillStyle = 'rgba(0,0,0,0.55)'; g.fillRect(16, 18, W - 32, H - 30); g.filter = 'none';
+    const t = tex(c, { wrap: false }); t.colorSpace = THREE.NoColorSpace; return t;
+  });
+}

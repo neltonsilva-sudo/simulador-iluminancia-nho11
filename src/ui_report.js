@@ -155,7 +155,7 @@ function quadroHTML(app, r, values, { title = '', croqui = true } = {}) {
       </table>
       ${r.note ? `<p class="rp-note">${esc(r.note)}</p>` : ''}
       ${S.task?.length ? `<p class="rp-note">Leituras na área da tarefa: ${S.task.map((x) => fmt(x, 1)).join('; ')} lux.</p>` : ''}
-      ${(r.checks || []).length ? `<table class="rp-chk"><tr><th>Critério (NHO-11, item 5)</th><th>Resultado</th><th>Situação</th></tr>${r.checks.map((c) => `<tr><td>${esc(c.label)}</td><td>${esc(c.detail)}</td><td class="${c.ok === null ? '' : c.ok ? 'ok' : 'bad'}">${c.ok === null ? 'caso a caso' : c.ok ? 'ATENDE' : 'NÃO ATENDE'}</td></tr>`).join('')}</table>` : ''}
+      ${(r.checks || []).length ? `<table class="rp-chk"><tr><th>Critério (NHO-11, item 5)</th><th>Resultado</th><th>Situação</th></tr>${r.checks.map((c) => `<tr><td>${esc(c.label)}</td><td>${esc(c.detail)}</td><td class="${c.ok === null ? '' : c.ok ? 'ok' : c.id === 'condicao' ? 'warn' : 'bad'}">${c.ok === null ? 'caso a caso' : c.id === 'condicao' ? (c.ok ? 'ADEQUADA' : 'INVÁLIDA') : c.ok ? 'ATENDE' : 'NÃO ATENDE'}</td></tr>`).join('')}</table>` : ''}
     </div>`;
 }
 
@@ -273,7 +273,7 @@ export const REPORT_CSS = `
 .rp-reads td.pt{font-weight:700;color:#333;width:7%;text-align:center}
 .rp-reads td.low{color:#c00000;font-weight:700}
 .rp-reads tr.avg td{background:#f2f4f7;font-weight:700;border-top:2px solid #002060;-webkit-print-color-adjust:exact;print-color-adjust:exact}
-.rp-chk td.ok{color:#00843f;font-weight:700;text-align:center}.rp-chk td.bad{color:#c00000;font-weight:700;text-align:center}
+.rp-chk{table-layout:fixed}.rp-chk th:nth-child(1){width:36%}.rp-chk th:nth-child(3){width:17%}.rp-chk td.warn{color:#8a5a00;font-weight:700;text-align:center}.rp-chk td.ok{color:#00843f;font-weight:700;text-align:center}.rp-chk td.bad{color:#c00000;font-weight:700;text-align:center}
 .rp-note{font-size:9.5pt;color:#444}
 .rp-verdict{display:inline-block;margin:2px 0 8px;padding:5px 14px;font-weight:700;font-size:12pt;border:2px solid #9aa3b0;color:#444}
 .rp-verdict.ok{border-color:#00B050;color:#00843f;background:#e6f7ee;-webkit-print-color-adjust:exact;print-color-adjust:exact}

@@ -93,11 +93,11 @@ export function createStage(canvas, opts = {}) {
     const kae = AE_KEY / avg;
     stage.aeSuggested = kae;
     // AE de celular com limites: a noite (luz artificial) fica na exposição FÍSICA calibrada (dimerizar escurece);
-    // de dia (sol/céu, 1000+ lx) a câmera fecha suavemente até K_PHYS/12. Compensação parcial (expoente 0,8) como num
-    // celular: dia continua parecendo mais claro que noite. Unidades fora de escala (> 30×) → AE pleno (proteção).
+    // de dia (sol/céu, 1000+ lx) a câmera fecha suavemente até K_PHYS/60. Compensação parcial (expoente 0,9) como num
+    // celular: dia continua parecendo mais claro que noite. Unidades fora de escala (> 30× / < 1/80) → AE pleno (proteção).
     const r = kae / K_PHYS;
-    if (r > 30 || r < 1 / 30) Kt = kae;
-    else Kt = K_PHYS * Math.min(K_UP, Math.max(1 / 12, Math.pow(r, 0.8)));
+    if (r > 30 || r < 1 / 80) Kt = kae;
+    else Kt = K_PHYS * Math.min(K_UP, Math.max(1 / 60, Math.pow(r, 0.9)));
     if (Math.abs(Math.log(r)) < Math.log(1.6)) Kt = K_PHYS; // faixa morta: sala padrão à noite = calibração física exata
     // bloom proporcional: muita área estourada (teto luminoso, manchas de sol) → bloom contido
     let bright = 0; for (let i = 0; i < lum.length; i++) if (lum[i] * Kt > 2.0) bright++;
