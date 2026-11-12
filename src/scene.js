@@ -71,9 +71,9 @@ export function createStage(canvas, opts = {}) {
   const meterRT = new THREE.WebGLRenderTarget(128, 52, { type: THREE.FloatType });
   const meterCam = new THREE.PerspectiveCamera();
   function meter() {
-    const s = viewSpec('ref1', {}, room, 906 / 358);
-    meterCam.fov = s.fov; meterCam.aspect = (906 / 358) / s.squash; meterCam.near = 0.05; meterCam.far = 80;
-    meterCam.position.copy(s.pos); meterCam.lookAt(s.target); meterCam.updateProjectionMatrix(); meterCam.updateMatrixWorld();
+    // Mede o quadro que o usuário está vendo (como a câmera de um celular). Na vista 'ref1' a medição coincide com a
+    // calibração física; nas demais, a exposição se adapta para não estourar (teto perto das calhas, janelas de dia).
+    meterCam.copy(camera); meterCam.near = 0.05; meterCam.far = 80; meterCam.updateProjectionMatrix(); meterCam.updateMatrixWorld();
     refl.suspend(true);
     const prev = renderer.getRenderTarget();
     const prevClip = renderer.clippingPlanes; renderer.clippingPlanes = []; // o corte do teto (vista de cima) não pode entrar na medição
@@ -99,6 +99,9 @@ export function createStage(canvas, opts = {}) {
     if (r > 30 || r < 1 / 80) Kt = kae;
     else Kt = K_PHYS * Math.min(K_UP, Math.max(1 / 60, Math.pow(r, 0.9)));
     if (Math.abs(Math.log(r)) < Math.log(1.6)) Kt = K_PHYS; // faixa morta: sala padrão à noite = calibração física exata
+    // proteção de altas luzes: no máximo ~4% do quadro (fora as fontes) acima do branco
+    const p96 = lum[Math.min(lum.length - 1, Math.floor(lum.length * 0.96))];
+    if (p96 > 0 && Kt * p96 > 0.95) Kt = 0.95 / p96;
     // bloom proporcional: muita área estourada (teto luminoso, manchas de sol) → bloom contido
     let bright = 0; for (let i = 0; i < lum.length; i++) if (lum[i] * Kt > 2.0) bright++;
     brightFrac = bright / lum.length;
@@ -272,7 +275,7 @@ export function createStage(canvas, opts = {}) {
 
   // ---------- assinatura de movimento (barata, por quadro) ----------
   const lastCam = new THREE.Matrix4(), lastProj = new THREE.Matrix4();
-  let lastMotion = 0, motionSigVal = 0, staticN = 0;
+  let lastMotion = 0, motionSigVal = 0, staticN = 0, settleT = 0;
   function motionSig() {
     let a = 0, k = 0;
     scene.traverseVisible((o) => { if (o.isMesh || o.isLight) { const e = o.matrixWorld.elements; k++; a += (e[12] * 1.3 + e[13] * 2.1 + e[14] * 3.7) * ((k % 7) + 1); if (o.isLight) a += o.intensity * 0.01; } });
@@ -301,6 +304,7 @@ export function createStage(canvas, opts = {}) {
     // cache estático: com câmera parada e cena sem movimento, reflexo planar e GTAO (os passes mais caros depois da
     // própria cena) só são refeitos a cada 8 quadros — o resultado é idêntico e sobra GPU para manter ≥ 45 fps.
     const moving = !lastCam.equals(camera.matrixWorld) || !lastProj.equals(camera.projectionMatrix) || motionSig() !== lastMotion;
+    if (moving) settleT = 0; else if (settleT >= 0 && (settleT += dt) > 0.25) { settleT = -1; meter(); }
     lastCam.copy(camera.matrixWorld); lastProj.copy(camera.projectionMatrix); lastMotion = motionSigVal;
     staticN = moving ? 0 : staticN + 1;
     const heavy = staticN < 3 || staticN % 8 === 0;

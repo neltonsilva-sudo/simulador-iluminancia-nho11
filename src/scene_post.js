@@ -138,7 +138,7 @@ export function createPost(renderer, scene, camera, quality) {
   if (gtao) { pre.uniforms.tAO.value = gtao.gtaoMap; pre.uniforms.tAOMask.value = gtao.normalRenderTarget.texture; pre.uniforms.aoOn.value = 1; }
   composer.addPass(pre);
 
-  const bloom = new UnrealBloomPass(new THREE.Vector2(size.x / 2, size.y / 2), hi ? 0.22 : 0.14, 0.62, 1.6);
+  const bloom = new UnrealBloomPass(new THREE.Vector2(size.x / 2, size.y / 2), hi ? 0.14 : 0.10, 0.35, 2.4);
   composer.addPass(bloom);
 
   const extraIndex = composer.passes.length; // passes extras HDR entram aqui
