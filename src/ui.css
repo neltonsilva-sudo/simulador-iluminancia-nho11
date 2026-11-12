@@ -678,3 +678,16 @@ select.inp { appearance: none; padding-right: 30px; background-image: url("data:
 :root[data-theme="dark"] .nho-panel :is(.sh, .fbox-k, .hero-k, .gm-k, .calc-k, .band-k, .stp-k) { color: #ffcc33 !important; }
 @media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) .nho-panel :is(.sh, .fbox-k, .hero-k, .gm-k, .calc-k, .band-k, .stp-k) { color: #ffcc33 !important; } }
 .nho-panel .sh *, .nho-panel .fbox-k * { color: inherit !important; }
+/* títulos e rótulos de botões em AMARELO em todos os temas (pedido do usuário), com fundo de vidro escuro para contraste */
+.nho-panel :is(.sh, .fbox-k, .hero-k, .gm-k, .calc-k, .band-k, .stp-k, .cmp-k) { color: #ffcc33 !important; text-shadow: 0 1px 2px rgba(0, 0, 0, 0.75) !important; }
+.nho-panel .btn:not(.btn-primary), .nho-panel .rep-btn, .nho-panel [class*="report"] button, .nho-panel button[class*="rep"] {
+  background: rgba(12, 15, 21, 0.58) !important; border-color: rgba(255, 204, 51, 0.35) !important; }
+.nho-panel .btn:not(.btn-primary), .nho-panel .btn:not(.btn-primary) *, .nho-panel button[class*="rep"], .nho-panel button[class*="rep"] * {
+  color: #ffcc33 !important; text-shadow: 0 1px 2px rgba(0, 0, 0, 0.7) !important; }
+.nho-panel .btn:not(.btn-primary) .ico, .nho-panel .btn:not(.btn-primary) svg { color: #ffcc33 !important; stroke: currentColor; }
+/* botão principal "Emitir relatório técnico" no painel: azul-marinho sólido com texto amarelo */
+.nho-panel .btn-primary, .nho-panel [data-act="report"] { background: linear-gradient(180deg, #0b2f7a, #002060) !important; border: 1px solid rgba(255, 204, 51, 0.45) !important;
+  -webkit-backdrop-filter: none !important; backdrop-filter: none !important; box-shadow: 0 8px 18px -10px #002060, inset 0 1px 0 rgba(255, 255, 255, 0.18) !important; }
+.nho-panel .btn-primary, .nho-panel .btn-primary *, .nho-panel [data-act="report"], .nho-panel [data-act="report"] * { color: #ffcc33 !important; text-shadow: 0 1px 2px rgba(0, 0, 0, 0.6) !important; }
+.hud-rep, .hud-rep * { color: #ffcc33 !important; }
+.nho-panel .hero-t > span:first-child { color: #ffcc33 !important; text-shadow: 0 1px 2px rgba(0,0,0,0.75) !important; }
