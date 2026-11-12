@@ -672,3 +672,9 @@ select.inp { appearance: none; padding-right: 30px; background-image: url("data:
 :root[data-theme="dark"] .nho-panel .total { background: rgba(10, 13, 18, 0.62) !important; }
 @media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) .nho-panel .total { background: rgba(10, 13, 18, 0.62) !important; } }
 .nho-panel [class*="sec"], .nho-panel [class*="ttl"], .nho-panel [class*="title"], .nho-panel .lbl { color: var(--ui-fg2) !important; opacity: 1 !important; font-weight: 700; }
+/* títulos dos cards em amarelo (pedido do usuário) — tom âmbar no tema claro para manter contraste */
+.nho-panel .sh, .nho-panel .fbox-k, .nho-panel .hero-k, .nho-panel .gm-k, .nho-panel .calc-k, .nho-panel .band-k, .nho-panel .stp-k {
+  color: #b07800 !important; opacity: 1 !important; font-weight: 750; text-shadow: none !important; }
+:root[data-theme="dark"] .nho-panel :is(.sh, .fbox-k, .hero-k, .gm-k, .calc-k, .band-k, .stp-k) { color: #ffcc33 !important; }
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) .nho-panel :is(.sh, .fbox-k, .hero-k, .gm-k, .calc-k, .band-k, .stp-k) { color: #ffcc33 !important; } }
+.nho-panel .sh *, .nho-panel .fbox-k * { color: inherit !important; }
