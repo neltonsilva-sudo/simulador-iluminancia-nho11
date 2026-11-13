@@ -7,7 +7,7 @@ import { openReportStudio } from './ui_report.js';
 import { allConds, resultsFor, completeConds, curKey, COND_KEYS, COND_LABEL, COND_LONG, lumState } from './ui_cond.js';
 import { esc, fmt, parseNum, groupInfo, GROUP_COLORS, ADJ_REASONS, adjustedE, parecer, fracHTML, expandedUI } from './ui_text.js';
 
-const KEY = 'nho11-twin-ui-v1';
+const KEY = 'nho11-twin-ui-v2';
 const loadStore = () => { try { return JSON.parse(localStorage.getItem(KEY) || '{}') || {}; } catch { return {}; } };
 const debounce = (f, ms) => { let t; return (...a) => { clearTimeout(t); t = setTimeout(() => f(...a), ms); }; };
 const fmtIn = (v) => (+v).toLocaleString('pt-BR', { maximumFractionDigits: 2, useGrouping: false });

@@ -129,7 +129,8 @@ function simulate() {
 }
 function loadExample(k) {
   const e = NORM.EXEMPLOS[k]; if (!e) return;
-  app.set({ room: { ...state.room, ...e.room }, config: e.config, N: e.N, M: e.M });
+  // os exemplos trocam só arranjo e leituras — a sala (9,16 × 5,90 m, 40 carteiras) não muda de tamanho
+  app.set({ config: e.config, N: e.N, M: e.M });
   app.set({ values: { ...e.values } });
 }
 

@@ -61,9 +61,9 @@ function makeMaterials() {
         #include <colorspace_fragment>
       }`,
   });
-  M.extL = extMat(TX.nightTexture(), 1.0);     // parede x=−W/2 (lado do sol)
-  M.extR = extMat(TX.exteriorTexture(), 0.16); // parede x=+W/2 (à noite: muro externo fracamente iluminado pela sala)
-  M.extR.uniforms.g.value.z = 1.15;            // lado da sombra no dia ensolarado
+  M.extL = extMat(TX.exteriorTexture(), 0.16); // parede x=−W/2 (porta): dá para o CORREDOR — sem sol, luz difusa menor
+  M.extL.uniforms.g.value.y = 0.55; M.extL.uniforms.g.value.z = 0.6;
+  M.extR = extMat(TX.nightTexture(), 1.0);     // parede x=+W/2: exterior, lado do sol
   M.filmL = M.film.clone(); M.filmL.name = 'room.filmL'; M.filmR = M.film.clone(); M.filmR.name = 'room.filmR';
   { const wb = TX.whiteboardTextures();
     M.wbSurf = new THREE.MeshPhysicalMaterial({ name: 'room.wbSurf', color: 0xffffff, map: wb.map, roughnessMap: wb.roughnessMap, roughness: 1, clearcoat: 1, clearcoatRoughness: 0.085, specularIntensity: 1, envMapIntensity: 1.2 });
@@ -156,8 +156,8 @@ export function buildRoom(stage, room) {
   // estrutura do teto some quando a câmera está acima do teto (planta / vistas aéreas).
   // ---- luz natural vista pelas janelas: lê __sim.state.avaliacao {periodo, ceu}; transição suave ----
   const DAY = { noturno: { w: [1, 0, 0], glassOp: 0.42, glassCol: 0x1c2026, filmL: 0.03, filmR: 0.03 },
-    nublado: { w: [0, 1, 0], glassOp: 0.12, glassCol: 0xf4f6f7, filmL: 0.85, filmR: 0.75 },
-    ensolarado: { w: [0, 0, 1], glassOp: 0.10, glassCol: 0xffffff, filmL: 1.45, filmR: 0.80 } };
+    nublado: { w: [0, 1, 0], glassOp: 0.12, glassCol: 0xf4f6f7, filmL: 0.40, filmR: 0.85 },
+    ensolarado: { w: [0, 0, 1], glassOp: 0.10, glassCol: 0xffffff, filmL: 0.50, filmR: 1.45 } };
   const dl = { key: null, cur: null, tgt: null };
   const condOf = (a) => (a?.periodo === 'diurno' ? (a.ceu === 'ensolarado' ? 'ensolarado' : 'nublado') : 'noturno');
   const vecOf = (c) => { const d = DAY[c], col = new THREE.Color(d.glassCol); return [...d.w, d.glassOp, col.r, col.g, col.b, d.filmL, d.filmR]; };

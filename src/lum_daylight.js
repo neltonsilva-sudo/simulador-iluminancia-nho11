@@ -92,7 +92,8 @@ export function buildDaylight(stage, parent, { mapSize = 2048 } = {}) {
         const side = wall === 'left' ? -1 : wall === 'right' ? 1 : 0;
         if (side) { r.position.set(side * (room.W / 2 - 0.03), (y0 + y1) / 2, c); r.rotation.set(0, side < 0 ? -Math.PI / 2 : Math.PI / 2, 0); }
         else { const s2 = wall === 'back' ? -1 : 1; r.position.set(c, (y0 + y1) / 2, s2 * (room.L / 2 - 0.03)); r.rotation.set(0, s2 < 0 ? 0 : Math.PI, 0); }
-        r.userData.A = A; winGroup.add(r); st.wins.push(r);
+        r.userData.A = A * (PH.CORRIDOR && wall === PH.CORRIDOR.wall ? PH.CORRIDOR.factor : 1); // corredor: luz menor
+        winGroup.add(r); st.wins.push(r);
       }
       const ext = Math.max(room.L, room.W) / 2 + 1.5, c = sun.shadow.camera;
       c.left = -ext; c.right = ext; c.top = ext; c.bottom = -ext; c.near = 0.5; c.far = 40; c.updateProjectionMatrix();

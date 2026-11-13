@@ -69,7 +69,9 @@ export const DAYLIGHT = { extLux: 10000, vertRatio: 0.40, tau: 0.62 };
 /** Sol direto (céu ensolarado): manhã, sol entrando pelas janelas da parede x = −W/2. alt = altitude solar, az = desvio
  *  horizontal do raio em relação à normal da parede (para +z), Edn = iluminância direta normal (céu claro, alt 35° ≈ 70 klx),
  *  tau = vidro 0,80 × caixilho/grade 0,78. Escala com spec.daylight/2,5. */
-export const SUN = { alt: 35, az: 20, Edn: 70000, tau: 0.62, wall: 'left' };
+export const SUN = { alt: 35, az: 20, Edn: 70000, tau: 0.62, wall: 'right' }; // sol pelas 4 janelas externas (x=+W/2)
+/** Janelas que dão para o CORREDOR (parede da porta, x=−W/2): só luz difusa reduzida, sem sol direto. */
+export const CORRIDOR = { wall: 'left', factor: 0.30 };
 /** Condição de avaliação normalizada a partir do spec: {day, sunny, daylight}. period 'noturno' ⇒ sem luz natural. */
 export function skyCondition(spec = {}) {
   const night = spec.period === 'noturno';
@@ -77,14 +79,15 @@ export function skyCondition(spec = {}) {
   const sunny = dl > 0 && (spec.sky ? spec.sky === 'ensolarado' : dl >= 2);
   return { day: dl > 0, sunny, daylight: dl, label: dl > 0 ? `Diurna · ${sunny ? 'ensolarado' : 'nublado'}` : 'Noturna' };
 }
-function sunDir() { const a = SUN.alt * Math.PI / 180, b = SUN.az * Math.PI / 180; return [Math.cos(a) * Math.cos(b), -Math.sin(a), Math.cos(a) * Math.sin(b)]; }
+function sunDir() { const a = SUN.alt * Math.PI / 180, b = SUN.az * Math.PI / 180, sx = SUN.wall === 'right' ? -1 : 1; return [sx * Math.cos(a) * Math.cos(b), -Math.sin(a), Math.cos(a) * Math.sin(b)]; }
+const sunWallX = (room) => (SUN.wall === 'right' ? room.W / 2 : -room.W / 2);
 function sunWindows(room) {
   return OPENINGS.filter((o) => o.kind === 'janela' && o.wall === SUN.wall).map((o) => { const c = -room.L / 2 + o.at * room.L; return { z0: c - o.w / 2, z1: c + o.w / 2, y0: o.y0, y1: Math.min(o.y1, room.H) }; });
 }
 /** Iluminância do sol direto (lux) num ponto com normal n, se o raio para o sol passa por uma janela (sem sombra de móveis). */
 function sunAt(px, py, pz, nx, ny, nz, room, Esun) {
   if (!(Esun > 0)) return 0; const d = sunDir(); const cosI = -(nx * d[0] + ny * d[1] + nz * d[2]); if (cosI <= 0) return 0;
-  const t = (px + room.W / 2) / d[0]; if (t < 0) return 0;
+  const t = (px - sunWallX(room)) / d[0]; if (t < 0) return 0;
   const qy = py - t * d[1], qz = pz - t * d[2];
   for (const w of sunWindows(room)) if (qy > w.y0 && qy < w.y1 && qz > w.z0 && qz < w.z1) return Esun * cosI;
   return 0;
@@ -99,7 +102,7 @@ export function sunPatches(room, spec, y = room.plane ?? 0.75) {
   const d = sunDir(), out = [], Eh = Es * -d[1];
   for (const w of sunWindows(room)) {
     if (w.y1 <= y) continue; const y0 = Math.max(w.y0, y + 1e-6);
-    const proj = (wy, wz) => { const t = (wy - y) / -d[1]; return [-room.W / 2 + t * d[0], wz + t * d[2]]; };
+    const proj = (wy, wz) => { const t = (wy - y) / -d[1]; return [sunWallX(room) + t * d[0], wz + t * d[2]]; };
     let poly = [proj(y0, w.z0), proj(y0, w.z1), proj(w.y1, w.z1), proj(w.y1, w.z0)];
     for (const [ax, lim, sg] of [[0, room.W / 2, 1], [0, -room.W / 2, -1], [1, room.L / 2, 1], [1, -room.L / 2, -1]]) poly = clipPoly(poly, ax, lim, sg);
     if (poly.length >= 3) out.push({ pts: poly, y, E: Eh });
@@ -321,7 +324,7 @@ export function solve(lums, room, spec) {
     let fluxSurf = 0, daylightFlux = 0;
     for (let i = 0; i < n; i++) {
       const p = P[i];
-      if (p.surf === 'wall') { const w = wallMix(p, room); rho[i] = w.rho; if (Mday > 0 && w.win > 0) { Em[i] += w.win * Mday; daylit = true; } }
+      if (p.surf === 'wall') { const w = wallMix(p, room); rho[i] = w.rho; if (Mday > 0 && w.win > 0) { const side = p.axis === 0 ? (p.lo[0] < 0 ? 'left' : 'right') : 'other'; Em[i] += w.win * Mday * (side === CORRIDOR.wall ? CORRIDOR.factor : 1); daylit = true; } }
       else rho[i] = p.surf === 'ceiling' ? (luminous ? LUMINOUS_CEILING_RHO : REFLECT.ceiling) : REFLECT.floor;
       if (EL.n) { // irradiância direta média no patch (subamostragem 3×3; 6×6 perto das luminárias)
         const near = p.surf === 'ceiling' || (p.hi[1] > room.H - 0.6 && p.surf === 'wall');
@@ -341,11 +344,11 @@ export function solve(lums, room, spec) {
     if (Esun > 0) {
       const d = sunDir(), ns = 10, Wh = room.W / 2, Lh = room.L / 2;
       for (const w of sunWindows(room)) {
-        const fl = Esun * d[0] * (w.z1 - w.z0) * (w.y1 - w.y0) / (ns * ns); // fluxo por raio (irradiância no plano da janela × área)
+        const fl = Esun * Math.abs(d[0]) * (w.z1 - w.z0) * (w.y1 - w.y0) / (ns * ns); // fluxo por raio (irradiância no plano da janela × área)
         for (let a = 0; a < ns; a++) for (let b = 0; b < ns; b++) {
           const wy = w.y0 + (w.y1 - w.y0) * (a + 0.5) / ns, wz = w.z0 + (w.z1 - w.z0) * (b + 0.5) / ns;
-          const tf = wy / -d[1], tr = room.W / d[0], tz = d[2] > 0 ? (Lh - wz) / d[2] : d[2] < 0 ? (-Lh - wz) / d[2] : Infinity;
-          const tt = Math.min(tf, tr, tz), hx = -Wh + tt * d[0], hy = wy + tt * d[1], hz = wz + tt * d[2];
+          const x0 = sunWallX(room), tf = wy / -d[1], tr = room.W / Math.abs(d[0]), tz = d[2] > 0 ? (Lh - wz) / d[2] : d[2] < 0 ? (-Lh - wz) / d[2] : Infinity;
+          const tt = Math.min(tf, tr, tz), hx = x0 + tt * d[0], hy = wy + tt * d[1], hz = wz + tt * d[2];
           const surfHit = tt === tf ? 'floor' : 'wall';
           for (let i = 0; i < n; i++) { const p = P[i]; if (p.surf !== surfHit) continue;
             if (hx >= p.lo[0] - 1e-6 && hx <= p.hi[0] + 1e-6 && hy >= p.lo[1] - 1e-6 && hy <= p.hi[1] + 1e-6 && hz >= p.lo[2] - 1e-6 && hz <= p.hi[2] + 1e-6) {

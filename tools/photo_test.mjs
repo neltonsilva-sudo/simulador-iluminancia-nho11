@@ -123,7 +123,7 @@ setOpenings(openSave);
   console.log(`Centro da mancha (${c[0].toFixed(2)}, ${c[1].toFixed(2)}): ${Ein.toFixed(0)} lux; 1,6 m adiante: ${Eout.toFixed(0)} lux`);
   ok(Ein > 2000 && Ein > 5 * Eout, 'ponto dentro da mancha de sol: milhares de lux');
   const S2 = (await import('../src/photo_core.js')).solve(lums, room, sunny), d = [Math.cos(SUN.alt * Math.PI / 180) * Math.cos(SUN.az * Math.PI / 180)];
-  const winA = OPENINGS.filter((o) => o.kind === 'janela' && o.wall === 'left').reduce((a, o) => a + o.w * (o.y1 - o.y0), 0);
+  const winA = OPENINGS.filter((o) => o.kind === 'janela' && o.wall === SUN.wall).reduce((a, o) => a + o.w * (o.y1 - o.y0), 0);
   const expect = S2.Esun * d[0] * winA;
   ok(Math.abs(S2.sunFlux / expect - 1) < 0.01, `fluxo solar que entra = depositado nas superfícies (${S2.sunFlux.toFixed(0)} vs ${expect.toFixed(0)} lm)`);
 }
