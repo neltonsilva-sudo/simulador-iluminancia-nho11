@@ -119,8 +119,8 @@ export function makeBackTex() {
   });
   hand(g, 'LX-07', lx + 22, ly + 26 + 36, 26);
   hand(g, 'I 0412/22', lx + 22, ly + 26 + 56 + 36, 27);
-  hand(g, '23/05/2022', lx + 22, ly + 26 + 112 + 36, 27, -0.02);
-  hand(g, '23/05/2023', lx + 22, ly + 26 + 168 + 36, 25, -0.015);
+  hand(g, '23/05/2026', lx + 22, ly + 26 + 112 + 36, 27, -0.02);
+  hand(g, '23/05/2027', lx + 22, ly + 26 + 168 + 36, 25, -0.015);
   g.save(); g.translate(lx + lw - 22, ly + lh / 2); g.rotate(Math.PI / 2); g.fillStyle = '#2a2606'; g.font = `900 30px ${FONT}`; g.textAlign = 'center'; g.textBaseline = 'middle';
   g.letterSpacing = '6px'; g.fillText('CALIBRADO', 0, 0); g.restore();
   g.fillStyle = 'rgba(60,50,0,.5)'; g.fillRect(lx + lw - 46, ly + 6, 2, lh - 12);

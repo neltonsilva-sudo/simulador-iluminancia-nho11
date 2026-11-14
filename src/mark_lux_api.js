@@ -109,6 +109,7 @@ export function installLuxAPI(stage, dev) {
     /** Tampa da fotocélula: true = colocada (leitura ~0, permite ZERO); false = retirada (pendurada no cordão). */
     setCap(b) { return dev.setCap(b); },
     state() { return dev.state(); },
+    get _lcd() { return I.lcdCanvas; },
     /** Close suave numa peça + contorno pulsante. part: 'body'|'lcd'|'sensor'|'cap'|'back'|'tripod'|tecla. Promise → true ao chegar. */
     focus(part = 'body', opts = {}) {
       part = String(part).toLowerCase();

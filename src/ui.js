@@ -275,7 +275,10 @@ export function createUI(root, app) {
   }
 
   // ===================== referências =====================
-  const env = createEnvPicker($(root, '#env-host'), app.QUADRO1, { value: S.envId, onSelect: (e) => { app.set({ envId: e.id }); reapplyAdjust(); toast(`Quadro 1: ${e.nome} — ${fmt(+e.E, 0)} lux`); } });
+  const env = createEnvPicker($(root, '#env-host'), app.QUADRO1, { value: S.envId, onSelect: (e) => { app.set({ envId: e.id }); reapplyAdjust(); toast(`Quadro 1: ${e.nome} — ${fmt(+e.E, 0)} lux`);
+    // ambiente noturno/diurno → já ajusta a Condição da avaliação (o usuário pode trocar depois)
+    const per = /noturn/i.test(e.nome) ? 'noturno' : (/diurn/i.test(e.nome) || e.id === 'edu-aula') ? 'diurno' : null;
+    if (per && S.avaliacao?.periodo !== per) setTimeout(() => setCond({ periodo: per }), 1600); } });
   $(root, '.lbl[for="env-in-proxy"]').setAttribute('for', $(root, '.cbx-in').id);
 
   // ---------- tabs ----------

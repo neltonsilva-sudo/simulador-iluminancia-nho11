@@ -218,7 +218,7 @@ export function mountDemoLux(root, app, hooks = {}) {
   if (synth) { voice = pickVoice(); synth.addEventListener?.('voiceschanged', () => { voice = pickVoice(); updMute(); }); }
   const canSpeak = () => !!(synth && voice && !muted);
   const toSpeech = (t) => t.replace(/Ē/g, 'E médio').replace(/[▲▼]\s*/g, '').replace(/setas\s+(?=[:.,]|$)/g, 'setas ').replace(/HOLD\/L\.S/g, 'HOLD')
-    .replace(/MEM\/READ/g, 'MEM READ').replace(/LUX\/FC/g, 'LUX F C').replace(/NHO-11/g, 'N H O 11').replace(/\bRBC\b/g, 'R B C').replace(/\bAAA\b/g, 'triplo A')
+    .replace(/MEM\/READ/g, 'MEM READ').replace(/LUX\/FC/g, 'LUX F C').replace(/NHO-(\d+)/g, 'ene agá ó $1').replace(/\bNHO\b/g, 'ene agá ó').replace(/\bRBC\b/g, 'R B C').replace(/\bAAA\b/g, 'triplo A')
     .replace(/\bOL\b/g, 'O L').replace(/\bLCD\b/g, 'L C D').replace(/\bCIE\b/g, 'C I E').replace(/\bNO\.(\d+)/g, 'número $1').replace(/\b1,5 V\b/g, '1,5 volt')
     .replace(/(\d),(\d+) m\b/g, '$1,$2 metro').replace(/\bLED\b/g, 'led').replace(/→/g, ',').replace(/\b([PTQR])(\d+)\b/g, '$1 $2').replace(/[()]/g, ',').replace(/—/g, ',');
   const est = (s) => 900 + s.split(/\s+/).length * 330;

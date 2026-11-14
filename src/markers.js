@@ -5,6 +5,7 @@
 // Integração com o RENDER (HDR físico + AgX): as marcas 3D ficam na cena (oclusão correta) e são pré-compensadas
 // (mark_overlay.ovPatch); as ETIQUETAS são desenhadas num passe final próprio (OverlayPass), depois de todo o
 // pós-processamento → texto nítido, cores sRGB exatas, sem bloom/grão/tone mapping, tamanho constante em tela.
+import { openLuxPanel } from './lux_panel.js';
 import * as THREE from 'three';
 import {
   GROUP_HEX, STATE_HEX, LS, setAniso, canvasTex, makeTargetTexture, makeIdLabel, drawReading, READ_W, READ_H,
@@ -352,7 +353,9 @@ export function buildMarkers(stage) {
     if (id) { highlight(id); try { pickFn(id); } catch (err) { console.error(err); } }
     else retract();                                                    // clique no vazio recolhe o luxímetro
   });
-  addEventListener('keydown', (e) => { if (e.key === 'Escape' && lux.active) retract(); });
+  // duplo clique no luxímetro → segunda tela com o aparelho grande e teclas funcionais
+  canvas.addEventListener('dblclick', (e) => { if (luxAt(e)) { e.preventDefault(); openLuxPanel(); } });
+  addEventListener('keydown', (e) => { if (e.key === 'Escape' && lux.active && !document.querySelector('.lxp.open')) retract(); });
   function luxAt(e) {
     if (!lux.active) return null;
     const r = canvas.getBoundingClientRect(); ndc.set(((e.clientX - r.left) / r.width) * 2 - 1, -((e.clientY - r.top) / r.height) * 2 + 1);

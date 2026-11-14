@@ -124,23 +124,29 @@ function quadGeo(p0, p1, p2, p3, nrm, c, uvs) {
 function layoutOpenings(L) {
   const n = Math.max(1, Math.round(L / 2.29));
   const lo = -L / 2 + 0.12 + WIN_W / 2, hi = L / 2 - 0.10 - WIN_W / 2, cl = (z) => Math.min(hi, Math.max(lo, z));
-  const zlAll = Array.from({ length: n }, (_, i) => cl(-L / 2 + (i + 0.5) * (L / n) + 0.12 * Math.min(1, L / 9.16)));
-  // porta: centrada onde estava a 1ª janela, com folga mínima de 0,30 m do canto (montante + batente + caixa de passagem)
-  const doorC = Math.min(L / 2 - DOOR_W / 2 - 0.3, Math.max(-L / 2 + DOOR_W / 2 + 0.30, zlAll[0]));
-  const zl = zlAll.slice(1).filter((z) => z - WIN_W / 2 > doorC + DOOR_W / 2 + 0.15);
+  // parede da porta (esquerda, corredor), a partir da parede do quadro: 1 janela, a porta e mais n−1 janelas.
+  // Redimensiona: folgas iguais; se não couber, estreita as janelas (mín. 0,60 m).
+  const m = 0.30, nw = n, minGap = 0.35;
+  let winL = WIN_W, gap = (L - 2 * m - nw * winL - DOOR_W) / nw;
+  if (gap < minGap) { winL = Math.max(0.6, (L - 2 * m - DOOR_W - nw * minGap) / nw); gap = Math.max(0.1, (L - 2 * m - nw * winL - DOOR_W) / nw); }
+  const zl = []; let doorC = 0, z = -L / 2 + m;
+  for (let i = 0; i <= nw; i++) {
+    if (i === 1) { doorC = z + DOOR_W / 2; z += DOOR_W + gap; continue; }
+    zl.push(z + winL / 2); z += winL + gap;
+  }
   const zr = [];
   for (let i = 0; i < n; i++) { const z = cl(-L / 2 + (i + 0.5) * (L / n) + 0.33 * Math.min(1, L / 9.16)); if (!zr.some((q) => Math.abs(q - z) < WIN_W + 0.2)) zr.push(z); }
-  return { zl, zr, doorC };
+  return { zl, zr, doorC, winL };
 }
 const vertical = (H) => { const head = Math.min(WIN_HEAD, H - 0.25); return { head, sill: Math.min(WIN_HEAD - WIN_H, head - 0.6), doorH: Math.min(DOOR_H, H - 0.12) }; };
 
 /** Função pura (SPEC: origem no centro do piso, metros). Aberturas da sala para FOTOMETRIA / croqui da UI.
  * → [{kind:'window'|'door', wall:'left'|'right'|'front'|'back', x, z, width, sill, head}] (x,z = centro do vão no plano da parede) */
 export function getOpenings(room) {
-  const L = +room.L, W = +room.W, H = +room.H; const { zl, zr, doorC } = layoutOpenings(L); const v = vertical(H);
+  const L = +room.L, W = +room.W, H = +room.H; const { zl, zr, doorC, winL } = layoutOpenings(L); const v = vertical(H);
   return [
     { kind: 'door', wall: 'left', x: -W / 2, z: doorC, width: DOOR_W, sill: 0, head: v.doorH },
-    ...zl.map((z) => ({ kind: 'window', wall: 'left', x: -W / 2, z, width: WIN_W, sill: v.sill, head: v.head })),
+    ...zl.map((z) => ({ kind: 'window', wall: 'left', x: -W / 2, z, width: winL, sill: v.sill, head: v.head })),
     ...zr.map((z) => ({ kind: 'window', wall: 'right', x: W / 2, z, width: WIN_W, sill: v.sill, head: v.head })),
   ];
 }
@@ -218,9 +224,9 @@ export function buildRoom(stage, room) {
     const W_ = Object.fromEntries(walls.map((w) => [w.id, w]));
 
     // ---- aberturas ----
-    const { zl, zr, doorC } = layoutOpenings(L);
+    const { zl, zr, doorC, winL } = layoutOpenings(L);
     const vv = vertical(H), winV = [vv.sill, vv.head];
-    W_.left.holes = zl.map((z) => { const u = L / 2 - z; return { u0: u - WIN_W / 2, u1: u + WIN_W / 2, v0: winV[0], v1: winV[1], kind: 'win', film: true, side: 'L' }; });
+    W_.left.holes = zl.map((z) => { const u = L / 2 - z; return { u0: u - winL / 2, u1: u + winL / 2, v0: winV[0], v1: winV[1], kind: 'win', film: true, side: 'L' }; });
     W_.right.holes = zr.map((z) => { const u = z + L / 2; return { u0: u - WIN_W / 2, u1: u + WIN_W / 2, v0: winV[0], v1: winV[1], kind: 'win', film: true, side: 'R' }; });
     const dh = vv.doorH, ud0 = L / 2 - doorC; // parede esquerda: u = L/2 − z
     W_.left.holes.push({ u0: ud0 - DOOR_W / 2, u1: ud0 + DOOR_W / 2, v0: 0, v1: dh, kind: 'door' });
@@ -293,7 +299,7 @@ export function buildRoom(stage, room) {
       }
       // topo da parede (visível só de cima)
       addBox(col, 'cap', w.len + 2 * WALL_T, 0.03, WALL_T, w.len / 2, H + 0.015, -WALL_T / 2, wallFrame(w, 0, 0, 0));
-      decorate(w, col, { L, W, H, zl, zr, doorC });
+      decorate(w, col, { L, W, H, zl, zr, doorC, winL });
       emit(wg, col, { receive: true, cast: false });
     }
 
@@ -382,7 +388,7 @@ export function buildRoom(stage, room) {
   }
 
   // ---- quadros, interruptor, sensores (posições tiradas da foto ref1, em frações do comprimento da parede) ----
-  function decorate(w, col, { L, W, H, zl, zr, doorC }) {
+  function decorate(w, col, { L, W, H, zl, zr, doorC, winL = WIN_W }) {
     const F = (u, v) => wallFrame(w, u, v, 0);
     const holes = (pts) => pts.forEach(([u, v]) => { if (v > 0.2 && v < H - 0.1 && u > 0.1 && u < w.len - 0.1) addHole(col, F(0, 0), u, v); });
     if (w.id === 'front') {
@@ -401,8 +407,9 @@ export function buildRoom(stage, room) {
     } else if (w.id === 'left') {
       // interruptor junto à porta, no lado da maçaneta (para o fundo da sala, z maior → u menor)
       const uSw = L / 2 - doorC - DOOR_W / 2 - 0.22;
-      if (!zl.length || uSw > L / 2 - zl[0] + WIN_W / 2 + 0.06) buildSwitch(col, F(uSw, 1.15));
-      if (zl.length >= 2) { const u = L / 2 - (zl[0] + zl[1]) / 2; holes([[u - 0.16, 2.14], [u + 0.16, 2.14]]); }
+      const zN = zl.find((q) => q > doorC);
+      if (zN === undefined || uSw > L / 2 - zN + winL / 2 + 0.06) buildSwitch(col, F(uSw, 1.15));
+      if (zl.length >= 3) { const u = L / 2 - (zl[1] + zl[2]) / 2; holes([[u - 0.16, 2.14], [u + 0.16, 2.14]]); }
     } else if (w.id === 'back') {
       holes([[W * 0.62 - 0.15, 2.07], [W * 0.62 + 0.15, 2.07], [W * 0.62 - 0.15, 1.63]]);
     }

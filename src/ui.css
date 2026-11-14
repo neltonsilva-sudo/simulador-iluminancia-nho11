@@ -699,3 +699,60 @@ select.inp { appearance: none; padding-right: 30px; background-image: url("data:
 button.lx-ic { border: 0; cursor: pointer; transition: transform 0.15s, box-shadow 0.15s; }
 button.lx-ic:hover { transform: scale(1.06); box-shadow: 0 0 0 2px #ffcc33; }
 button.lx-ic.on { box-shadow: 0 0 0 2px #ffcc33, 0 0 14px rgba(255, 204, 51, 0.6); }
+
+/* botão "Registrar leitura" do cartão do luxímetro: texto legível (navy + amarelo, como os demais botões principais) */
+.lxcard .lx-rec, .lx-rec.btn-primary, .mark-rec { background: linear-gradient(180deg, #0b2f7a, #002060) !important; border: 1px solid rgba(255, 204, 51, 0.5) !important; }
+.lxcard .lx-rec, .lxcard .lx-rec *, .lx-rec.btn-primary *, .mark-rec, .mark-rec * { color: #ffcc33 !important; text-shadow: 0 1px 2px rgba(0, 0, 0, 0.6) !important; }
+.lxcard .lx-rec svg, .lxcard .lx-rec .ico { stroke: currentColor; }
+.lxcard .lx-rec kbd { background: rgba(255, 204, 51, 0.18) !important; color: #ffcc33 !important; }
+.lxcard .lx-rec:hover { filter: brightness(1.18); }
+
+/* ---------------- segunda tela do luxímetro (duplo clique) ---------------- */
+.lxp { position: fixed; inset: 0; z-index: 9000; display: none; align-items: center; justify-content: center; padding: 16px;
+  background: rgba(6, 10, 18, 0.55); -webkit-backdrop-filter: blur(10px) saturate(1.2); backdrop-filter: blur(10px) saturate(1.2); }
+.lxp.open { display: flex; animation: lxpIn .22s ease-out; }
+@keyframes lxpIn { from { opacity: 0; transform: scale(.98); } to { opacity: 1; transform: none; } }
+.lxp-card { max-width: 860px; width: 100%; max-height: calc(100vh - 32px); overflow: auto; border-radius: 22px; color: #f4f6f8;
+  background: linear-gradient(160deg, rgba(40, 48, 62, .78), rgba(18, 22, 30, .82)); border: 1px solid rgba(255, 255, 255, .18);
+  box-shadow: 0 30px 80px rgba(0, 0, 0, .55), inset 0 1px 0 rgba(255, 255, 255, .18); -webkit-backdrop-filter: blur(24px) saturate(1.4); backdrop-filter: blur(24px) saturate(1.4); }
+.lxp-hd { display: flex; align-items: center; gap: 12px; padding: 14px 18px; border-bottom: 1px solid rgba(255, 255, 255, .1); }
+.lxp-hd b { color: #ffcc33; font-size: 15px; letter-spacing: .06em; text-transform: uppercase; text-shadow: 0 1px 2px rgba(0, 0, 0, .6); }
+.lxp-pt { font-size: 13px; color: #cfd6de; flex: 1; }
+.lxp-x { width: 36px; height: 36px; border-radius: 50%; border: 1px solid rgba(255, 255, 255, .25); background: rgba(255, 255, 255, .08); color: #fff; font-size: 16px; cursor: pointer; }
+.lxp-x:hover { background: rgba(255, 204, 51, .25); color: #ffcc33; }
+.lxp-body { display: flex; gap: 22px; padding: 18px; align-items: flex-start; }
+.lxp-dev { position: relative; flex: 0 0 auto; padding-top: 70px; }
+.lxp-bump { position: relative; height: min(62vh, 560px); aspect-ratio: 0.0565 / 0.152; padding: 14px; border-radius: 26px; box-sizing: content-box;
+  background: linear-gradient(90deg, #2b2f33, #3c4146 45%, #2a2e32); box-shadow: 0 18px 40px rgba(0, 0, 0, .5), inset 0 2px 3px rgba(255, 255, 255, .12); }
+.lxp-face, .lxp-backimg { position: absolute; inset: 14px; border-radius: 14px; background-size: 100% 100%; overflow: hidden; }
+.lxp-backimg { opacity: 0; pointer-events: none; transition: opacity .25s; }
+.lxp.is-back .lxp-backimg { opacity: 1; pointer-events: auto; }
+.lxp.is-back .lxp-face { opacity: 0; pointer-events: none; }
+.lxp-lcd { position: absolute; border-radius: 4px; box-shadow: inset 0 0 0 2px rgba(0, 0, 0, .35); }
+.lxp-k { position: absolute; padding: 0; border: 0; cursor: pointer; border-radius: 22%; background: linear-gradient(180deg, #5d646b, #3d4349);
+  box-shadow: 0 3px 0 #23272b, 0 4px 8px rgba(0, 0, 0, .45), inset 0 1px 0 rgba(255, 255, 255, .25); transition: transform .06s, box-shadow .06s, filter .15s; }
+.lxp-k img { width: 100%; height: 100%; display: block; pointer-events: none; }
+.lxp-k:hover { filter: brightness(1.2); outline: 2px solid rgba(255, 204, 51, .7); outline-offset: 2px; }
+.lxp-k.down { transform: translateY(2px); box-shadow: 0 1px 0 #23272b, 0 1px 3px rgba(0, 0, 0, .5); }
+.lxp-pw { border-radius: 50%; background: radial-gradient(circle at 40% 35%, #ffe27a, #f4c21b 60%, #c99a0c); box-shadow: 0 3px 0 #8a6a08, 0 4px 8px rgba(0, 0, 0, .45); }
+.lxp-cell { position: absolute; top: 0; left: 50%; transform: translateX(-50%); width: 92px; height: 62px; border-radius: 46px 46px 10px 10px;
+  background: linear-gradient(180deg, #3b4045, #24282c); box-shadow: 0 6px 14px rgba(0, 0, 0, .45); }
+.lxp-cell i { position: absolute; left: 50%; top: 8px; transform: translateX(-50%); width: 62px; height: 40px; border-radius: 31px 31px 6px 6px;
+  background: radial-gradient(circle at 45% 35%, #fff, #e9ecee 55%, #c9cdd0); transition: background .25s; }
+.lxp-cell.capped i { background: radial-gradient(circle at 45% 35%, #4a4f54, #1e2124); }
+.lxp-side { flex: 1; min-width: 220px; display: flex; flex-direction: column; gap: 12px; }
+.lxp-read { padding: 14px 16px; border-radius: 16px; background: rgba(0, 0, 0, .3); border: 1px solid rgba(255, 255, 255, .1); display: flex; flex-direction: column; gap: 2px; }
+.lxp-read small { color: #ffcc33; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; font-size: 11px; }
+.lxp-v { font: 720 32px var(--ui-mono, ui-monospace, monospace); letter-spacing: -.02em; color: #fff; }
+.lxp-st { font-size: 12.5px; color: #b9c3cd; }
+.lxp-msg { min-height: 20px; font-size: 13px; color: #ffe08a; }
+.lxp-row { display: flex; gap: 8px; }
+.lxp-b { flex: 1; min-height: 40px; border-radius: 12px; border: 1px solid rgba(255, 255, 255, .22); background: rgba(255, 255, 255, .08); color: #fff; font-weight: 650; font-size: 13.5px; cursor: pointer; }
+.lxp-b:hover { background: rgba(255, 255, 255, .16); }
+.lxp-rec { background: linear-gradient(180deg, #0b2f7a, #002060); border-color: rgba(255, 204, 51, .5); color: #ffcc33; }
+.lxp-rec:disabled { opacity: .45; cursor: default; }
+.lxp-help { margin: 0; padding: 12px 14px 12px 28px; border-radius: 14px; background: rgba(0, 0, 0, .22); font-size: 12.5px; line-height: 1.55; color: #dde3e9; }
+.lxp-help b { color: #ffcc33; } .lxp-help em { font-style: normal; font-weight: 800; color: #fff; display: inline-block; min-width: 46px; }
+@media (max-width: 700px) {
+  .lxp-body { flex-direction: column; align-items: center; } .lxp-bump { height: min(52vh, 440px); } .lxp-side { width: 100%; }
+}

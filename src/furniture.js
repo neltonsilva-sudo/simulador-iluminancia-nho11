@@ -56,7 +56,7 @@ export const SEATING = { cols: 5, perCol: 8, wallGap: 0.025, teacher: 1.4, back:
 // janela mais próxima da parede da frente (1ª de n = round(L/2,29) janelas)
 function doorOf(room) {
   try {
-    const o = ROOM.getOpenings?.(room), d = o && (o.door || (Array.isArray(o.doors) && o.doors[0]));
+    const o = ROOM.getOpenings?.(room), d = o && (o.door || (Array.isArray(o.doors) && o.doors[0]) || (Array.isArray(o) && o.find((k) => k.kind === 'door')));
     if (d) {
       const z = d.z ?? d.zc ?? d.c ?? d.center ?? d.u, w = d.w ?? d.width ?? 0.84;
       const side = d.wall ?? d.side ?? (d.x !== undefined ? (d.x < 0 ? 'left' : 'right') : 'left');
