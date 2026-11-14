@@ -200,7 +200,7 @@ export function buildMarkers(stage) {
 
   // ---------- luxímetro: gravação, rótulo flutuante e botão "Registrar leitura" ----------
   const chairs = makeChairMover(stage);
-  lux.onRecord = (id) => { try { const v = window.__sim?.recordReading?.(id); if (isFinite(v)) lux.showRecorded(v); } catch (err) { console.error(err); } };
+  lux.onRecord = (id, v) => { if (isFinite(v) && !recHooked) lux.showRecorded(v); };   // o registro (valor exibido) é feito pelo próprio aparelho
   let recHooked = false;
   function hookSim() {
     if (recHooked || !window.__sim?.on) return; recHooked = true;
@@ -246,7 +246,7 @@ export function buildMarkers(stage) {
   const bw = new THREE.Vector3(), bv = new THREE.Vector3();
   function luxUI() {
     hookSim();
-    const on = lux.active && !!lux.id && !!lux.bodyWorld(bw);
+    const on = lux.active && !!lux.id && !lux.focused && !!lux.bodyWorld(bw);
     let show = false;
     if (on) {
       const cam = stage.camera; bv.copy(bw).applyMatrix4(cam.matrixWorldInverse); const depth = -bv.z;
@@ -255,7 +255,8 @@ export function buildMarkers(stage) {
         const o = P.get(lux.id); const hex = o?.hex || GROUP_HEX[lux.id[0].toUpperCase()] || '#888';
         const dsp = lux.display; const id = (o?.p.label || lux.id.toUpperCase());
         const val = !dsp.power ? '—' : isFinite(dsp.value) ? fmtLux(dsp.value) : '—';
-        const [sub, col] = !dsp.power ? ['visor desligado (POWER)', '#9aa6b5'] : dsp.mem ? ['✓ leitura registrada', '#5fe39a'] : dsp.hold ? ['HOLD — leitura congelada', '#ffd166']
+        const [sub, col] = !dsp.power ? ['visor desligado (POWER)', '#9aa6b5'] : dsp.mem ? ['✓ leitura registrada', '#5fe39a'] : dsp.cap ? ['tampa na fotocélula — retire para medir', '#ffd166']
+          : dsp.mode === 'read' ? ['memória (READ) — leitura gravada', '#9fc4ff'] : dsp.hold ? ['HOLD — leitura congelada', '#ffd166']
           : dsp.moving ? ['deslocando o tripé…', '#9aa6b5'] : !dsp.stable ? ['estabilizando a fotocélula…', '#ffd166'] : ['leitura ao vivo · estável', '#9fc4ff'];
         const rv = num(values?.[lux.id]); const sub2 = rv == null ? sub : `${sub}  ·  campo: ${fmtLux(rv)} lux`;
         const key = id + val + sub2; if (key !== lcKey) { lcKey = key; drawLuxLabel(id, hex, val, sub2, col); }
@@ -343,9 +344,10 @@ export function buildMarkers(stage) {
   canvas.addEventListener('pointerdown', (e) => { down = { x: e.clientX, y: e.clientY, t: performance.now() }; });
   canvas.addEventListener('pointerup', (e) => {
     if (!down) return; const d = Math.hypot(e.clientX - down.x, e.clientY - down.y), dt = performance.now() - down.t; down = null;
-    if (d > 6 || dt > 700) return;
+    if (d > 6) return;
     const lh = luxAt(e);
-    if (lh) { if (lh !== 'body') lux.press(lh); return; }               // teclas 3D do aparelho
+    if (lh) { if (lh !== 'body') lux.press(lh, { long: dt > 650 }); return; }   // teclas 3D (pressão longa: HOLD→L.S., MEM→READ)
+    if (dt > 700) return;
     const id = pickAt(e);
     if (id) { highlight(id); try { pickFn(id); } catch (err) { console.error(err); } }
     else retract();                                                    // clique no vazio recolhe o luxímetro
@@ -492,7 +494,7 @@ export function buildMarkers(stage) {
       // feixe descendo
       const yT = o.yTop; o.sticker.position.y = yT; o.ringC.position.y = yT - 0.001; o.glowC.position.y = yT - 0.006; o.core.position.y = o.halo.position.y = yT; o.cLabel.position.y = yT - 0.004;
       const uL = easeInOut((tau - 0.22) / 0.55), len = Math.max(0.0005, (yT - pl) * uL);
-      const beamOn = uL > 0 && !plan;
+      const beamOn = uL > 0 && !plan && !window.__lux?.focused; // sem laser cruzando o visor nos close-ups do luxímetro
       o.core.visible = o.halo.visible = beamOn;
       const hb = hl ? 1.5 + 0.4 * hlPulse : 1;
       tmp.set(o.p.x, (yT + pl) / 2, o.p.z); const dB = tmp.distanceTo(cam.position);

@@ -696,3 +696,6 @@ select.inp { appearance: none; padding-right: 30px; background-image: url("data:
 @media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) .cro-box { background: #ffffff !important; } }
 .cro-box *, .zoom-b * { text-shadow: none !important; }
 .zoom-b { background: #ffffff !important; }
+button.lx-ic { border: 0; cursor: pointer; transition: transform 0.15s, box-shadow 0.15s; }
+button.lx-ic:hover { transform: scale(1.06); box-shadow: 0 0 0 2px #ffcc33; }
+button.lx-ic.on { box-shadow: 0 0 0 2px #ffcc33, 0 0 14px rgba(255, 204, 51, 0.6); }

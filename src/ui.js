@@ -4,6 +4,7 @@ import { icon } from './ui_icons.js';
 import { createEnvPicker } from './ui_env.js';
 import { croquiFromApp, miniFigure } from './ui_croqui.js';
 import { openReportStudio } from './ui_report.js';
+import { mountDemoLux } from './demo_lux.js';
 import { allConds, resultsFor, completeConds, curKey, COND_KEYS, COND_LABEL, COND_LONG, lumState } from './ui_cond.js';
 import { esc, fmt, parseNum, groupInfo, GROUP_COLORS, ADJ_REASONS, adjustedE, parecer, fracHTML, expandedUI } from './ui_text.js';
 
@@ -89,7 +90,7 @@ export function createUI(root, app) {
     <button type="button" class="dk tg" data-tg="on" aria-pressed="true" title="Ligar/desligar luminárias">${icon('bulb')}<span>Luzes</span></button>
   </div>
   <div class="lxcard" role="region" aria-label="Luxímetro virtual" hidden>
-    <div class="lx-ic">${icon('meter')}</div>
+    <button type="button" class="lx-ic" data-lx-zoom title="Ver o luxímetro de perto (clique de novo para voltar)" aria-label="Ver o luxímetro de perto">${icon('meter')}</button>
     <div class="lx-m"><span class="lx-t">Luxímetro em <b class="lx-id">—</b><em class="lx-g"></em></span><span class="lx-v"><b class="lx-val" aria-live="off">—</b> lux</span><span class="lx-s">fotocélula horizontal a 0,75 m · leitura ao vivo</span></div>
     <button type="button" class="btn btn-primary lx-rec" aria-keyshortcuts="R">${icon('check')}<span>Registrar leitura</span><kbd>R</kbd></button>
     <button type="button" class="ib lx-x" aria-label="Fechar luxímetro">${icon('x')}</button>
@@ -710,4 +711,12 @@ export function createUI(root, app) {
   setTab(tab);
   updateAll();
   syncSheetVar();
+  try { mountDemoLux(root, app, { setTab, toast, setCollapsed, setSheet }); } catch (e) { console.error('[ui] demonstração', e); }
 }
+
+// ícone do cartão do luxímetro: aproxima a câmera do aparelho (2º clique volta)
+document.addEventListener('click', (e) => {
+  const b = e.target.closest?.('[data-lx-zoom]'); if (!b) return;
+  const L = window.__lux; if (!L) return;
+  if (L.focused) { L.unfocus?.(); b.classList.remove('on'); } else { L.focus?.('body'); b.classList.add('on'); }
+});

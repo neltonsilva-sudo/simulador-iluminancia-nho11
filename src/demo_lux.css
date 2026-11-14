@@ -1,0 +1,94 @@
+/* Demonstração guiada do luxímetro — cartão em liquid glass (vidro escuro para leitura sobre qualquer fundo). Dono: UI. */
+
+/* ---------- botões de entrada ---------- */
+.dlx-row { display: flex; align-items: stretch; gap: 8px; }
+.dlx-row .identify { flex: 1 1 auto; min-width: 0; width: auto; }
+.nho-panel .dlx-launch { flex: 0 0 auto; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 3px; height: auto; min-height: 0;
+  width: 104px; padding: 8px 6px; border-radius: 15px; text-align: center; line-height: 1.15; }
+.nho-panel .dlx-launch .ico { width: 22px; height: 22px; padding: 4px; border-radius: 50%; background: rgba(255, 204, 51, 0.16); box-shadow: 0 0 0 1px rgba(255, 204, 51, 0.45); }
+.nho-panel .dlx-launch b { display: block; font-size: 12.5px; font-weight: 750; }
+.nho-panel .dlx-launch small { display: block; font-size: 10.5px; font-weight: 600; color: #ffcc33 !important; opacity: 0.85 !important; }
+.nho-panel .dlx-launch:hover { border-color: rgba(255, 204, 51, 0.8) !important; }
+.nho-panel .dlx-launch:focus-visible { outline: 3px solid rgba(255, 204, 51, 0.6); outline-offset: 2px; }
+.dock .dlx-dock .ico { color: #c58a00; }
+:root[data-theme="dark"] .dock .dlx-dock .ico { color: #ffcc33; }
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) .dock .dlx-dock .ico { color: #ffcc33; } }
+.dlx-on .dlx-dock { background: color-mix(in srgb, #ffc23a 22%, transparent) !important; }
+
+/* ---------- cartão ---------- */
+/* desktop: canto superior direito, abaixo do HUD — deixa livres o centro do 3D (luxímetro) e o cartão .lxcard */
+.dlx { position: fixed; z-index: 32; top: 146px; right: 16px;
+  width: min(430px, calc(100vw - 470px)); min-width: 320px; max-height: calc(100vh - 240px); overflow: auto; padding: 13px 15px 13px; border-radius: 20px; color: #f3f6fa; outline: none;
+  background: linear-gradient(155deg, rgba(16, 20, 28, 0.74) 0%, rgba(16, 20, 28, 0.58) 55%, rgba(16, 20, 28, 0.72) 100%);
+  -webkit-backdrop-filter: blur(30px) saturate(1.9) brightness(1.04); backdrop-filter: blur(30px) saturate(1.9) brightness(1.04);
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.28), inset 0 -1px 0 rgba(255, 255, 255, 0.06), inset 0 0 22px -6px rgba(255, 255, 255, 0.18),
+    0 22px 48px -18px rgba(0, 0, 0, 0.6), 0 2px 8px -2px rgba(0, 0, 0, 0.35);
+  font-size: 13.5px; line-height: 1.5; text-shadow: 0 1px 2px rgba(0, 0, 0, 0.6); animation: dlxIn 0.32s cubic-bezier(0.2, 0.85, 0.25, 1);
+  }
+.dlx[hidden] { display: none; }
+.dlx::before { content: ""; position: absolute; inset: 0; border-radius: inherit; pointer-events: none;
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.16) 0%, rgba(255, 255, 255, 0.03) 24%, transparent 46%), radial-gradient(120% 60% at 12% 0%, rgba(255, 255, 255, 0.12), transparent 60%); }
+.dlx > * { position: relative; }
+.dlx:focus-visible { box-shadow: 0 0 0 3px rgba(255, 204, 51, 0.55), 0 22px 48px -18px rgba(0, 0, 0, 0.6); }
+@keyframes dlxIn { from { opacity: 0; transform: translateX(18px) scale(0.98); } to { opacity: 1; transform: none; } }
+
+.dlx-top { display: flex; align-items: center; gap: 8px; min-height: 28px; }
+.dlx-n { font-size: 11px; font-weight: 750; letter-spacing: 0.06em; text-transform: uppercase; color: #dfe5ee; }
+.dlx-ref { font-size: 10.5px; font-weight: 700; padding: 2px 8px; border-radius: 999px; color: #ffcc33; background: rgba(255, 204, 51, 0.12); border: 1px solid rgba(255, 204, 51, 0.35); white-space: nowrap; }
+.dlx-sp { flex: 1; }
+.dlx-ib { display: grid; place-items: center; width: 30px; height: 30px; padding: 0; border-radius: 10px; border: 1px solid rgba(255, 255, 255, 0.16); background: rgba(255, 255, 255, 0.08); color: #f3f6fa; cursor: pointer; }
+.dlx-ib:hover { background: rgba(255, 255, 255, 0.16); }
+.dlx-ib[aria-pressed="true"] { color: #ffcc33; border-color: rgba(255, 204, 51, 0.5); }
+.dlx-ib:disabled { opacity: 0.45; cursor: default; }
+.dlx-ib .ico { width: 17px; height: 17px; }
+.dlx-t { margin: 6px 0 3px; font-size: 18px; line-height: 1.25; font-weight: 780; letter-spacing: -0.01em; color: #ffcc33; text-shadow: 0 1px 2px rgba(0, 0, 0, 0.75); }
+.dlx-x { margin: 0; font-size: 14px; color: #f3f6fa; font-weight: 500; }
+
+.dlx-read { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-top: 9px; }
+.dlx-lcd { display: inline-flex; align-items: baseline; gap: 8px; min-width: 128px; padding: 4px 10px; border-radius: 8px;
+  background: linear-gradient(180deg, #c3cdb6, #adb99f); color: #1d2418; text-shadow: none; box-shadow: inset 0 1px 3px rgba(0, 0, 0, 0.35), 0 0 0 1px rgba(0, 0, 0, 0.35);
+  font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace; }
+.dlx-l1 { font-size: 17px; font-weight: 800; font-variant-numeric: tabular-nums; }
+.dlx-l2 { font-style: normal; font-size: 11px; font-weight: 700; opacity: 0.8; }
+.dlx-sub { font-size: 11.5px; font-weight: 650; color: #dfe5ee; text-align: right; }
+
+.dlx-prog { height: 4px; margin: 10px 0 11px; border-radius: 3px; background: rgba(255, 255, 255, 0.14); overflow: hidden; }
+.dlx-prog i { display: block; height: 100%; width: 0; border-radius: inherit; background: linear-gradient(90deg, #ffb300, #ffcc33); transition: width 0.4s ease; }
+.dlx.paused .dlx-prog i { background: repeating-linear-gradient(45deg, #ffcc33 0 6px, #c99a12 6px 12px); }
+
+.dlx-nav, .dlx-end { display: flex; gap: 8px; }
+.dlx-nav[hidden], .dlx-end[hidden] { display: none; }
+.dlx-b { flex: 1; display: inline-flex; align-items: center; justify-content: center; gap: 6px; min-height: 38px; padding: 0 12px; border-radius: 12px; cursor: pointer;
+  border: 1px solid rgba(255, 204, 51, 0.35); background: rgba(12, 15, 21, 0.58); color: #ffcc33; font: inherit; font-size: 13px; font-weight: 700; text-shadow: 0 1px 2px rgba(0, 0, 0, 0.7); }
+.dlx-b:hover:not(:disabled) { border-color: rgba(255, 204, 51, 0.75); background: rgba(12, 15, 21, 0.72); }
+.dlx-b:disabled { opacity: 0.4; cursor: default; }
+.dlx-b .ico { width: 16px; height: 16px; }
+.dlx-pri { background: linear-gradient(180deg, #0b2f7a, #002060); border-color: rgba(255, 204, 51, 0.5); box-shadow: 0 8px 18px -10px #002060, inset 0 1px 0 rgba(255, 255, 255, 0.18); }
+.dlx-pri:hover:not(:disabled) { background: linear-gradient(180deg, #123a90, #0a2a72); }
+.dlx-b:focus-visible, .dlx-ib:focus-visible { outline: 3px solid rgba(255, 204, 51, 0.65); outline-offset: 2px; }
+.dlx-end .dlx-b { min-height: 42px; }
+
+/* destaque pulsante nos elementos da interface citados no passo */
+.dlx-hi { position: relative; animation: dlxPulse 1.4s ease-in-out infinite !important; outline: 2px solid #ffcc33 !important; outline-offset: 3px; }
+@keyframes dlxPulse { 0%, 100% { box-shadow: 0 0 0 0 rgba(255, 204, 51, 0.65); } 50% { box-shadow: 0 0 0 9px rgba(255, 204, 51, 0); } }
+
+/* ---------- celular: faixa inferior ---------- */
+@media (max-width: 760px) {
+  .dlx { top: auto; left: 0; right: 0; bottom: 0; transform: none; width: auto; min-width: 0; max-height: 62vh; padding: 11px 14px calc(12px + env(safe-area-inset-bottom));
+    border-radius: 20px 20px 0 0; border-bottom: 0; animation: dlxUp 0.32s cubic-bezier(0.2, 0.85, 0.25, 1); }
+  @keyframes dlxUp { from { opacity: 0; transform: translateY(24px); } to { opacity: 1; transform: none; } }
+  .dlx-t { font-size: 16px; margin-top: 4px; }
+  .dlx-x { font-size: 13.5px; max-height: 7.6em; }
+  .dlx-read { margin-top: 7px; } .dlx-sub { font-size: 11px; }
+  .dlx-prog { margin: 8px 0 9px; }
+  .dlx-b { min-height: 40px; padding: 0 8px; }
+  .dlx-end { flex-direction: column; }
+  .dlx-on .dock, .dlx-on .lxcard { display: none !important; }
+  .nho-panel .dlx-launch { width: 92px; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .dlx, .dlx-prog i { animation: none; transition: none; }
+  .dlx-hi { animation: none !important; }
+}
+.dlx-lcd[hidden] { display: none; }

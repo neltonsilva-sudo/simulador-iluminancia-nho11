@@ -100,3 +100,20 @@ Layout (pedido do usuário): parede esquerda x=−W/2 → PORTA no lugar da 1ª 
 janelas; parede direita x=+W/2 → n janelas (padrão 9,16 m: esquerda 3 janelas + porta, direita 4 janelas).
 Janela padrão 1,30 × 0,95 m (verga 2,20 m, peitoril 1,25 m); porta 0,84 × 2,10 m. `n = max(1, round(L/2,29))`.
 A vista pelas janelas segue `__sim.state.avaliacao` ({periodo, ceu}) e o evento `'daylight'` (SALA não cria luzes).
+
+## MARCAÇÃO — luxímetro "LED Light Meter" (mark_luxmeter.js + mark_lux_lcd/tex/geo/api.js) e `window.__lux`
+Réplica do aparelho do usuário (refs/lux/, sem marca): corpo 16,5×6,4×3,1 cm num berço preso à coluna do tripé (visor
+voltado à câmera), fotocélula com o TOPO DA CÚPULA exatamente em room.plane (0,75 m), tampa presa por cordão, cabo
+espiralado físico. Teclas: POWER, LX/FC·CD (`unit`), MEM·READ (curto `mem` grava até 99 + grava o campo; longo `read`),
+HOLD·L.S. (curto `hold`; longo `source`), ▲ `up`, ZERO `zero` (só com tampa), ▼ `down`. Clique longo (>650 ms) no 3D.
+Fontes (2ª linha "L1 1.000"): L1 LED branco 1,000 (padrão = sala) · L2 Fluorescente 0,975 · L3 Vapor metálico 0,962 ·
+L4 Vapor de sódio 0,947 · L5 Incandescente 1,018 · L6 Luz do dia 1,012. Visor estável = `__sim.readLuxmeter(id) × fator`
+(com L1: exatamente readLuxmeter; varia só nos ~1,6 s de estabilização). REC (botão "Registrar leitura") e MEM gravam o
+VALOR EXIBIDO via `__sim.set({values})` (REC também emite `'record'`). Tampa colocada → ~0,5 lx (escuro) ou 0,0 após ZERO.
+`window.__lux = { power(on?), press(name, {long}?) /* 'power'|'source'|'hold'|'mem'|'zero'|'up'|'down' (+'read','unit','rec') */,
+setCap(bool), state(), focus(part, {duration}?) → Promise<bool> /* 'body'|'lcd'|'sensor'|'cap'|'back'|'tripod'|tecla */,
+unfocus() → Promise, showBack(bool), onChange(fn) → unsubscribe, sources, setSource(code|idx), clearMem(), record(), place(id) }`.
+`state()` = `{on, hold, source:{code,name,factor,index}, zeroed, cap, reading /* lux exibido (HOLD → congelado) */, unit,
+mode:'meas'|'read', readIndex, display:[linha1, linha2] /* ex. "185.0 Lux","L1 1.000" */, mem:[{no,v,unit,src,factor,id,t}],
+id, stable, back, msg, roomSource, visible}`. Sem ponto ativo, `focus`/`press` posicionam o aparelho no ponto ativo ou p1.
+`focus` trava a guinada do tripé, faz close com a vista `orbit` animada e contorno Fresnel pulsante; `unfocus` volta a `point:<id>`.

@@ -1,198 +1,132 @@
-// MARCAÇÃO — luxímetro virtual (aparelho digital genérico, fotocélula separada com cabo espiralado, tripé).
-// A face superior do difusor da fotocélula fica EXATAMENTE na altura do plano de trabalho (room.plane, 0,75 m).
-// Dono: MARCAÇÃO. Sem marca comercial.
+// MARCAÇÃO — luxímetro virtual "LED Light Meter" (réplica do aparelho do usuário, fotos em refs/lux/, sem marca):
+// corpo cinza-claro com bumper de borracha ranhurado, LCD de 2 linhas (leitura + fonte de luz/fator), 6 teclas
+// (LX/FC·CD, MEM·READ, HOLD·L.S., ▲, ZERO, ▼) + POWER amarelo; fotocélula separada com cúpula difusora, tampa presa
+// por cordão e cabo espiralado físico. A fotocélula fica num tripé com o TOPO DA CÚPULA EXATAMENTE em room.plane
+// (0,75 m); o corpo fica num berço preso à coluna do tripé, inclinado para a câmera (visor legível na vista do ponto).
+// Funções (manual do aparelho): POWER liga/desliga (teste de segmentos); HOLD congela; HOLD longo = L.S. (fonte de luz:
+// código + fator na 2ª linha, fator aplicado à leitura); MEM grava (até 99), MEM longo = READ (▲/▼ navegam); ZERO só
+// com a tampa; LX/FC alterna lux/fc. API de demonstração: window.__lux (mark_lux_api.js, docs/CONTRACT.md).
 import * as THREE from 'three';
-import { RoundedBoxGeometry } from 'three/addons/geometries/RoundedBoxGeometry.js';
-import { canvasTex, FONT } from './mark_tex.js';
+import { canvasTex } from './mark_tex.js';
+import { drawLuxLCD, LCD_W, LCD_H } from './mark_lux_lcd.js';
+import { makeMaterials, buildBody, buildPhotocell, buildCap, buildTripod, buildCradle, CoilCable, BODY } from './mark_lux_geo.js';
+import { installLuxAPI } from './mark_lux_api.js';
 
-const mk = (w, h) => { const c = document.createElement('canvas'); c.width = w; c.height = h; return c; };
-function rrect(ctx, x, y, w, h, r) { ctx.beginPath(); ctx.moveTo(x + r, y); ctx.arcTo(x + w, y, x + w, y + h, r); ctx.arcTo(x + w, y + h, x, y + h, r); ctx.arcTo(x, y + h, x, y, r); ctx.arcTo(x, y, x + w, y, r); ctx.closePath(); }
 const easeInOut = (x) => (x < 0.5 ? 4 * x * x * x : 1 - Math.pow(-2 * x + 2, 3) / 2);
+const clamp01 = (x) => Math.min(1, Math.max(0, x));
+const sstep = (a, b, x) => { const t = clamp01((x - a) / (b - a)); return t * t * (3 - 2 * t); };
 
-// ---------- LCD de 7 segmentos ----------
-const SEGS = { 0: 'abcdef', 1: 'bc', 2: 'abged', 3: 'abgcd', 4: 'fgbc', 5: 'afgcd', 6: 'afgedc', 7: 'abc', 8: 'abcdefg', 9: 'abcdfg', '-': 'g', O: 'abcdef', L: 'fed' };
-function seg(g, x, y, w, h, t, s) {
-  const gp = 3, ht = t / 2; const ym = y + h / 2;
-  const H = (x1, x2, yy) => { g.moveTo(x1, yy); g.lineTo(x1 + ht, yy - ht); g.lineTo(x2 - ht, yy - ht); g.lineTo(x2, yy); g.lineTo(x2 - ht, yy + ht); g.lineTo(x1 + ht, yy + ht); g.closePath(); };
-  const V = (xx, y1, y2) => { g.moveTo(xx, y1); g.lineTo(xx + ht, y1 + ht); g.lineTo(xx + ht, y2 - ht); g.lineTo(xx, y2); g.lineTo(xx - ht, y2 - ht); g.lineTo(xx - ht, y1 + ht); g.closePath(); };
-  g.beginPath();
-  if (s.includes('a')) H(x + gp, x + w - gp, y);
-  if (s.includes('g')) H(x + gp, x + w - gp, ym);
-  if (s.includes('d')) H(x + gp, x + w - gp, y + h);
-  if (s.includes('f')) V(x, y + gp, ym - gp);
-  if (s.includes('b')) V(x + w, y + gp, ym - gp);
-  if (s.includes('e')) V(x, ym + gp, y + h - gp);
-  if (s.includes('c')) V(x + w, ym + gp, y + h - gp);
-  g.fill();
-}
-function drawLCD(c, str, f = {}) {
-  const g = c.getContext('2d'), W = c.width, H = c.height;
-  const bg = g.createLinearGradient(0, 0, 0, H); bg.addColorStop(0, '#c3cdb6'); bg.addColorStop(1, '#adb99f');
-  g.fillStyle = bg; g.fillRect(0, 0, W, H);
-  // sombra interna da moldura
-  const sh = g.createLinearGradient(0, 0, 0, 26); sh.addColorStop(0, 'rgba(0,0,0,.28)'); sh.addColorStop(1, 'rgba(0,0,0,0)'); g.fillStyle = sh; g.fillRect(0, 0, W, 26);
-  const ink = 'rgba(28,34,30,.93)', ghost = 'rgba(28,34,30,.065)';
-  if (f.off) return;                                     // visor desligado
-  // indicadores
-  g.font = `700 30px ${FONT}`; g.textBaseline = 'top';
-  g.fillStyle = ink; g.fillText('AUTO', 22, 18);
-  g.fillStyle = f.hold ? ink : ghost; g.fillText('HOLD', 112, 18);
-  g.fillStyle = f.mem ? ink : ghost; g.fillText('REC', 206, 18);
-  // bateria
-  g.fillStyle = ink; g.strokeStyle = ink; g.lineWidth = 3; g.strokeRect(W - 76, 20, 46, 22); g.fillRect(W - 30, 26, 5, 10); g.fillRect(W - 72, 24, 30, 14);
-  // dígitos (4 posições, alinhados à direita)
-  const dw = 80, dh = 152, t = 21, gap = 26, x0 = W - 4 * (dw + gap) - 48, y0 = 72, sk = 0.1;
-  const chars = []; let dp = -1; for (const ch of str) { if (ch === '.') dp = chars.length - 1; else chars.push(ch); }
-  while (chars.length < 4) chars.unshift(' ');
-  g.save(); g.transform(1, 0, -sk, 1, sk * (y0 + dh), 0);
-  for (let i = 0; i < 4; i++) {
-    const x = x0 + i * (dw + gap);
-    g.fillStyle = ghost; seg(g, x, y0, dw, dh, t, 'abcdefg');
-    g.fillStyle = ink; if (chars[i] !== ' ') seg(g, x, y0, dw, dh, t, SEGS[chars[i]] || '');
-    // ponto decimal
-    g.fillStyle = i === dp ? ink : ghost; g.beginPath(); g.arc(x + dw + 14, y0 + dh + 2, 9.5, 0, Math.PI * 2); g.fill();
-  }
-  g.restore();
-  g.fillStyle = ink; g.font = `800 40px ${FONT}`; g.textBaseline = 'alphabetic'; g.textAlign = 'right'; g.fillText('lux', W - 18, H - 24);
-  g.fillStyle = ghost; g.fillText('fc', W - 18, H - 84); g.textAlign = 'left';
-  g.fillStyle = ink; g.font = `700 26px ${FONT}`; g.fillText('×1', 22, H - 26);
-}
-function fmtLCD(v) {
-  if (!isFinite(v) || v < 0) return '-.--';
-  if (v >= 10000) return 'OL';
-  if (v >= 1000) return String(Math.round(v));
-  return (Math.round(v * 10) / 10).toFixed(1);
-}
+/** Fontes de luz (tecla HOLD longa / L.S.): código no visor + fator de correção espectral. */
+// O aparelho vem ajustado para LED branco (fator 1,000 = fonte da sala): visor estável == __sim.readLuxmeter(id).
+// Outra fonte → visor = readLuxmeter × fator (e é esse valor exibido que REC/MEM gravam).
+export const LIGHT_SOURCES = [
+  { code: 'L1', name: 'LED branco', factor: 1.000 },
+  { code: 'L2', name: 'Fluorescente', factor: 0.975 },
+  { code: 'L3', name: 'Vapor metálico', factor: 0.962 },
+  { code: 'L4', name: 'Vapor de sódio', factor: 0.947 },
+  { code: 'L5', name: 'Incandescente', factor: 1.018 },
+  { code: 'L6', name: 'Luz do dia', factor: 1.012 },
+];
+const FC = 10.764;
+const MEM_MAX = 99;
 
-// ---------- painel frontal (serigrafia genérica, sem marca) ----------
-function makeFaceTex() {
-  const W = 256, H = 600, c = mk(W, H), g = c.getContext('2d');
-  const bg = g.createLinearGradient(0, 0, W, H); bg.addColorStop(0, '#6c737a'); bg.addColorStop(1, '#5a6168'); g.fillStyle = bg; g.fillRect(0, 0, W, H);
-  // moldura do LCD
-  rrect(g, 8, 62, W - 16, 172, 14); g.fillStyle = '#16191c'; g.fill();
-  // rótulos dos botões
-  g.fillStyle = '#eef1f4'; g.font = `700 22px ${FONT}`; g.textAlign = 'center';
-  [['POWER', 64, 398], ['HOLD', 192, 398], ['RANGE', 64, 510], ['REC', 192, 510]].forEach(([s, x, y]) => g.fillText(s, x, y));
-  g.strokeStyle = 'rgba(235,240,245,.5)'; g.lineWidth = 2; [[64, 348], [192, 348], [64, 460], [192, 460]].forEach(([x, y]) => { g.beginPath(); g.arc(x, y, 31, 0, Math.PI * 2); g.stroke(); });
-  g.font = `800 25px ${FONT}`; g.fillStyle = '#f2f4f6'; g.fillText('LUXÍMETRO', W / 2, 560); g.font = `600 18px ${FONT}`; g.fillStyle = '#d4d9de'; g.fillText('DIGITAL  ·  0–200 000 lx', W / 2, 586);
-  g.font = `700 18px ${FONT}`; g.fillText('▲ SENSOR', W / 2, 36);
-  return canvasTex(c);
+/** Fonte de luz realmente presente na sala (para o efeito do fator escolhido). */
+function actualSource() {
+  try {
+    const st = window.__sim?.state; if (!st) return 0;
+    if (st.lum?.on === false) return st.avaliacao?.periodo === 'diurno' ? 5 : 0;
+    return /fluor/i.test(st.lum?.type || '') ? 1 : 0;
+  } catch { return 0; }
+}
+function fmt4(v) {
+  if (!isFinite(v)) return { s: '----', x10: false };
+  v = Math.max(0, v);
+  if (v >= 400000) return { s: 'OL', x10: false };
+  if (v < 999.95) return { s: v.toFixed(1), x10: false };
+  if (v < 9999.5) return { s: String(Math.round(v)), x10: false };
+  return { s: String(Math.round(v / 10)), x10: true };
 }
 
 export function buildLuxmeter(stage) {
   const group = new THREE.Group(); group.name = 'luxmeter'; group.visible = false;
   const rig = new THREE.Group(); group.add(rig);
-  const lcdCanvas = mk(512, 330); drawLCD(lcdCanvas, '-.--');
+  const lcdCanvas = document.createElement('canvas'); lcdCanvas.width = LCD_W; lcdCanvas.height = LCD_H;
+  drawLuxLCD(lcdCanvas, { off: true });
   const lcdTex = canvasTex(lcdCanvas);
-  const M = {
-    alu: new THREE.MeshStandardMaterial({ color: 0xb4bac1, metalness: 0.35, roughness: 0.32 }),
-    alu2: new THREE.MeshStandardMaterial({ color: 0x9aa0a7, metalness: 0.35, roughness: 0.4 }),
-    black: new THREE.MeshStandardMaterial({ color: 0x1a1c1f, roughness: 0.5, metalness: 0.15 }),
-    rubber: new THREE.MeshStandardMaterial({ color: 0x0e0f10, roughness: 0.92 }),
-    body: new THREE.MeshStandardMaterial({ color: 0x2c3136, roughness: 0.7 }),
-    face: new THREE.MeshStandardMaterial({ map: makeFaceTex(), roughness: 0.55 }),
-    diff: new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.3, emissive: 0xffffff, emissiveIntensity: 0.35 }),
-    lcd: new THREE.MeshStandardMaterial({ map: lcdTex, roughness: 0.35, metalness: 0 }),   // LCD reflexivo (iluminado pela sala)
-    glass: new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.04, metalness: 0, transparent: true, opacity: 0.08, depthWrite: false }),
-    btnG: new THREE.MeshStandardMaterial({ color: 0x5b636b, roughness: 0.6 }),
-    btnY: new THREE.MeshStandardMaterial({ color: 0xf2b72e, roughness: 0.55 }),
-    btnR: new THREE.MeshStandardMaterial({ color: 0xd8473a, roughness: 0.55 }),
-    btnRec: new THREE.MeshStandardMaterial({ color: 0x3f8f5a, roughness: 0.55 }),
-    cable: new THREE.MeshStandardMaterial({ color: 0x141618, roughness: 0.42, metalness: 0.05 }),
-    bubble: new THREE.MeshStandardMaterial({ color: 0x9be36a, roughness: 0.15, emissive: 0x2c5a12, emissiveIntensity: 0.6 }),
-  };
-  const mats = Object.values(M);
-  const buttons = [], hits = []; let bodyRef = null;
-  const hitMat = new THREE.MeshBasicMaterial({ visible: false });
+  const M = makeMaterials();
+  const fadeMats = new Set();
+  let parts = {}, keys = [], hits = [], bodyRef = null, mountRef = null, cell = null, capObj = null, cable = null, cord = null, tripodMeshes = [];
   let plane = -1, builtFor = -1;
-  const add = (geo, mat, x = 0, y = 0, z = 0, parent = rig) => { const m = new THREE.Mesh(geo, mat); m.position.set(x, y, z); m.castShadow = true; m.receiveShadow = true; parent.add(m); return m; };
-  const tube = (a, b, r, mat, parent = rig, seg = 14) => { // cilindro entre dois pontos
+  const meshAt = (geo, mat, parent, x = 0, y = 0, z = 0) => { const m = new THREE.Mesh(geo, mat); m.position.set(x, y, z); m.castShadow = true; m.receiveShadow = true; parent.add(m); return m; };
+  const tube = (a, b, r, mat, seg = 14, parent = rig) => {
     const d = new THREE.Vector3().subVectors(b, a), L = d.length();
-    const m = add(new THREE.CylinderGeometry(r, r, L, seg), mat, 0, 0, 0, parent);
+    const m = meshAt(new THREE.CylinderGeometry(r, r, L, seg), mat, parent);
     m.position.copy(a).addScaledVector(d, 0.5); m.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), d.normalize()); return m;
   };
 
+  // pose do corpo no berço (frente = +Z do rig, voltada para a câmera)
+  const MOUNT = { y: 0, z: 0.128, tilt: -0.5 };
+  // tampa: pose assentada × pendurada pelo cordão
+  const capSeat = { p: new THREE.Vector3(), q: new THREE.Quaternion() }, capHang = { p: new THREE.Vector3(), q: new THREE.Quaternion() };
+
   function build(pl) {
     rig.traverse((o) => { if (o.isMesh) o.geometry.dispose(); }); rig.clear();
-    const yTop = pl;                      // face do difusor = plano de trabalho
-    // --- fotocélula ---
-    add(new THREE.CylinderGeometry(0.0255, 0.0255, 0.004, 48), M.diff, 0, yTop - 0.002, 0);                     // difusor plano (cosseno-corrigido)
-    const bez = add(new THREE.TorusGeometry(0.0285, 0.0028, 12, 48), M.alu, 0, yTop - 0.0032, 0); bez.rotation.x = Math.PI / 2;
-    add(new THREE.CylinderGeometry(0.033, 0.035, 0.026, 48), M.black, 0, yTop - 0.004 - 0.013, 0);               // carcaça
-    const gland = add(new THREE.CylinderGeometry(0.0055, 0.0065, 0.016, 16), M.black, 0.041, yTop - 0.019, 0); gland.rotation.z = Math.PI / 2;
-    add(new THREE.CylinderGeometry(0.011, 0.013, 0.02, 20), M.black, 0, yTop - 0.04, 0);                         // rosca 1/4"
-    // --- cabeça do tripé ---
-    add(new THREE.CylinderGeometry(0.024, 0.024, 0.008, 28), M.black, 0, yTop - 0.054, 0);
-    add(new THREE.SphereGeometry(0.017, 24, 16), M.alu2, 0, yTop - 0.072, 0);
-    add(new THREE.CylinderGeometry(0.02, 0.016, 0.03, 24), M.black, 0, yTop - 0.096, 0);
-    const knob = add(new THREE.CylinderGeometry(0.008, 0.008, 0.03, 16), M.black, 0.03, yTop - 0.094, 0); knob.rotation.z = Math.PI / 2;
-    // nível de bolha
-    const lv = add(new THREE.CylinderGeometry(0.009, 0.009, 0.006, 20), M.black, -0.022, yTop - 0.05, 0.0);
-    add(new THREE.SphereGeometry(0.0055, 12, 8), M.bubble, -0.022, yTop - 0.047, 0).scale.set(1, 0.4, 1); void lv;
-    // --- coluna central ---
-    const yHub = Math.min(0.42, yTop - 0.22), yCol0 = Math.max(0.12, yHub - 0.12);
-    tube(new THREE.Vector3(0, yCol0, 0), new THREE.Vector3(0, yTop - 0.11, 0), 0.0095, M.alu, rig, 20);
-    add(new THREE.CylinderGeometry(0.03, 0.026, 0.055, 28), M.black, 0, yHub, 0);                               // coroa
-    add(new THREE.CylinderGeometry(0.016, 0.016, 0.012, 20), M.black, 0, yCol0 + 0.004, 0);                      // batente
-    const lock = add(new THREE.CylinderGeometry(0.006, 0.006, 0.028, 12), M.black, 0, yHub + 0.004, 0.036); lock.rotation.x = Math.PI / 2;
-    // --- pernas (uma para trás, duas para a frente; frente = +Z local, voltada à câmera) ---
-    const footR = Math.min(0.34, yHub * 0.78);
-    for (let k = 0; k < 3; k++) {
-      const a = Math.PI + k * 2 * Math.PI / 3, dx = Math.sin(a), dz = Math.cos(a);
-      const top = new THREE.Vector3(dx * 0.03, yHub - 0.008, dz * 0.03), foot = new THREE.Vector3(dx * footR, 0.012, dz * footR);
-      const mid = top.clone().lerp(foot, 0.52);
-      add(new THREE.BoxGeometry(0.02, 0.03, 0.02), M.black, top.x, top.y, top.z).lookAt(foot.x, foot.y, foot.z);
-      tube(top, mid, 0.0085, M.alu, rig, 16);
-      tube(mid, foot, 0.0062, M.alu2, rig, 14);
-      const cl = tube(mid.clone().lerp(top, 0.06), mid.clone().lerp(foot, 0.06), 0.0115, M.black, rig, 16); void cl;
-      add(new THREE.SphereGeometry(0.012, 16, 12), M.rubber, foot.x, 0.009, foot.z).scale.set(1, 0.75, 1);
-      // braço de travamento (aranha) da coluna à perna
-      const t = 0.62, onLeg = top.clone().lerp(foot, t);
-      tube(new THREE.Vector3(dx * 0.016, yCol0 + 0.004, dz * 0.016), onLeg, 0.0035, M.black, rig, 8);
-    }
-    // --- suporte e corpo do luxímetro ---
-    const yArm = Math.min(yTop - 0.2, yHub + 0.11);
-    add(new THREE.CylinderGeometry(0.015, 0.015, 0.022, 20), M.black, 0, yArm, 0);
-    tube(new THREE.Vector3(0, yArm, 0.012), new THREE.Vector3(0, yArm + 0.004, 0.07), 0.0055, M.black, rig, 10);
-    const body = new THREE.Group(); body.position.set(0, yArm + 0.055, 0.092); body.rotation.x = -0.5; rig.add(body);
-    add(new THREE.BoxGeometry(0.05, 0.012, 0.03), M.black, 0, -0.088, -0.004, body);                            // berço
-    add(new RoundedBoxGeometry(0.074, 0.168, 0.034, 4, 0.011), M.body, 0, 0, 0, body);
-    add(new THREE.PlaneGeometry(0.064, 0.15), M.face, 0, 0, 0.01701, body);
-    add(new THREE.PlaneGeometry(0.056, 0.0355), M.lcd, 0, 0.0385, 0.0172, body);
-    add(new THREE.PlaneGeometry(0.06, 0.04), M.glass, 0, 0.0385, 0.0178, body);
-    buttons.length = 0; hits.length = 0;
-    [[-0.016, -0.012, M.btnR, 'power'], [0.016, -0.012, M.btnY, 'hold'], [-0.016, -0.04, M.btnG, 'range'], [0.016, -0.04, M.btnRec, 'rec']].forEach(([x, y, m, name]) => {
-      const b = add(new THREE.CylinderGeometry(0.0058, 0.0062, 0.004, 20), m, x, y, 0.0185, body); b.rotation.x = Math.PI / 2;
-      b.userData.btn = name; b.userData.z0 = 0.0185; buttons.push(b);
-      // alvo de clique um pouco maior que a tecla (fácil de acertar no 3D)
-      const hit = add(new THREE.CylinderGeometry(0.011, 0.011, 0.012, 12), hitMat, x, y, 0.02, body); hit.rotation.x = Math.PI / 2; hit.userData.btn = name; hit.castShadow = false; hits.push(hit); });
-    bodyRef = body;
-    add(new THREE.CylinderGeometry(0.0058, 0.0058, 0.012, 16), M.black, 0.022, 0.088, 0, body);                   // conector
-    // --- cabo espiralado: da fotocélula ao conector do aparelho ---
-    rig.updateMatrixWorld(true);
-    const end = body.localToWorld(new THREE.Vector3(0.022, 0.094, 0)); rig.worldToLocal(end);
-    const base = new THREE.CatmullRomCurve3([
-      new THREE.Vector3(0.049, yTop - 0.019, 0), new THREE.Vector3(0.07, yTop - 0.045, 0.01), new THREE.Vector3(0.075, yTop - 0.11, 0.03),
-      new THREE.Vector3(0.06, (yTop + end.y) / 2, 0.055), new THREE.Vector3(end.x + 0.012, end.y + 0.035, end.z - 0.005), end,
-    ], false, 'catmullrom', 0.5);
-    const n = 900, pts = [], coils = 26, up = new THREE.Vector3(0, 1, 0), side = new THREE.Vector3(), bin = new THREE.Vector3();
-    for (let i = 0; i <= n; i++) {
-      const u = i / n, p = base.getPointAt(u), tg = base.getTangentAt(u);
-      side.crossVectors(tg, Math.abs(tg.y) > 0.9 ? new THREE.Vector3(1, 0, 0) : up).normalize(); bin.crossVectors(tg, side).normalize();
-      const w = THREE.MathUtils.smoothstep(u, 0.06, 0.16) * (1 - THREE.MathUtils.smoothstep(u, 0.86, 0.95));
-      const th = u * coils * Math.PI * 2, r = 0.0075 * w;
-      pts.push(p.addScaledVector(side, Math.cos(th) * r).addScaledVector(bin, Math.sin(th) * r));
-    }
-    add(new THREE.TubeGeometry(new THREE.CatmullRomCurve3(pts), 1400, 0.0019, 7, false), M.cable);
-    rig.traverse((o) => { o.userData.noEnv = true; });
-    builtFor = pl;
+    const yTop = pl;
+    // fotocélula: topo da cúpula = plano de trabalho
+    cell = buildPhotocell(M); cell.group.position.set(0, yTop, 0); rig.add(cell.group);
+    // tripé
+    const tp = buildTripod(M, rig, yTop, (a, b, r, mat, seg) => tube(a, b, r, mat, seg)); tripodMeshes = tp.meshes;
+    // berço + corpo
+    MOUNT.y = tp.yArm + 0.012;
+    const mount = new THREE.Group(); mount.position.set(0, MOUNT.y, MOUNT.z); mount.rotation.x = MOUNT.tilt; rig.add(mount); mountRef = mount;
+    const cradle = buildCradle(M, mount); tripodMeshes.push(...cradle.meshes);
+    const armA = new THREE.Vector3(0, tp.yArm, 0.012); rig.updateMatrixWorld(true);
+    const armB = mount.localToWorld(new THREE.Vector3(0, -0.006, -0.004)); rig.worldToLocal(armB);
+    tripodMeshes.push(tube(armA, armB, 0.0062, M.black, 16));
+    tripodMeshes.push(meshAt(new THREE.SphereGeometry(0.0085, 16, 12), M.black, rig, armB.x, armB.y, armB.z));
+    const B = buildBody(M, lcdTex); B.group.position.set(0, BODY.h / 2 + 0.0002, 0); mount.add(B.group); bodyRef = B.group; B.group.userData.cableEnd = B.cableEnd;
+    keys = B.keys; hits = keys.map((k) => k.hit);
+    // tampa
+    capObj = buildCap(M); rig.add(capObj.group);
+    capSeat.p.set(0, yTop + cell.yS - 0.0016, 0); capSeat.q.identity();
+    // pendurada: aba para cima, topo voltado para a frente, abaixo do olhal (lado −X)
+    const mb = new THREE.Matrix4().makeBasis(new THREE.Vector3(0, -1, 0), new THREE.Vector3(0, 0, 1), new THREE.Vector3(-1, 0, 0));
+    capHang.q.setFromRotationMatrix(mb);
+    const lugW = cell.lugPos.clone().add(cell.group.position);
+    const tabW = lugW.clone().add(new THREE.Vector3(-0.012, -0.036, 0.006));
+    capHang.p.copy(tabW).sub(capObj.tabLocal.clone().applyQuaternion(capHang.q));
+    // cordão da tampa
+    cord = meshAt(new THREE.BufferGeometry(), M.cord, rig); cord.castShadow = false;
+    // cabo espiralado
+    cable = new CoilCable(M.cable, { rest: 0.2, turns: 44 }); rig.add(cable.mesh); cable.inited = false;
+    parts = {
+      body: [...B.parts.body], back: [...B.parts.body], lcd: B.parts.lcd, keys: B.parts.keys,
+      sensor: [...cell.parts.sensor, ...cell.parts.handle], cap: capObj.parts.cap, tripod: tripodMeshes,
+    };
+    fadeMats.clear(); rig.traverse((o) => { o.userData.noEnv = true; if (o.isMesh) (Array.isArray(o.material) ? o.material : [o.material]).forEach((m) => m && m.visible !== false && fadeMats.add(m)); });
+    for (const m of fadeMats) { m.userData.op0 = m.opacity; m.userData.tr0 = m.transparent; }
+    builtFor = pl; S.capPoseK = -1; S.backPoseK = -1;
   }
 
-  // ---------- estado / movimento / funcionamento ----------
-  const S = { x: 0, z: 0, fx: 0, fz: 0, tx: 0, tz: 0, t0: 0, dur: 0, yaw: 0, fade: 0, fadeDir: 0, lastLCD: '', lcdT: 0,
-    id: null, arriveT: 0, power: true, hold: false, heldV: NaN, memV: NaN, memUntil: 0, shown: NaN, stable: false, press: {} };
-  function setTransparent(b) { for (const m of mats) { if (m === M.glass) continue; if (m.transparent !== b) { m.transparent = b; m.needsUpdate = true; } } }
-  function setOpacity(o) { for (const m of mats) m.opacity = m === M.glass ? 0.08 * o : o; }
+  // ---------- estado ----------
+  const S = {
+    x: 0, z: 0, fx: 0, fz: 0, tx: 0, tz: 0, t0: 0, dur: 0, yaw: 0, yawLock: false, fade: 0, fadeDir: 0, lcdT: 0, lastKey: '',
+    id: null, arriveT: 0, on: true, testUntil: 0, hold: false, heldV: NaN, src: 0, unit: 'lux', zeroed: false,
+    cap: false, capK: 1, capT0: -9, capFrom: 1, lf: 1, mode: 'meas', readIdx: 0, mem: [], flash: null,
+    memUntil: 0, memV: NaN, shown: NaN, shownRaw: NaN, stable: false, press: {}, back: false, backK: 0, backFrom: 0, backT0: -9,
+    capPoseK: -1, backPoseK: -1, dispL1: '', dispL2: '', msg: '', vel: new THREE.Vector3(), lastPos: new THREE.Vector3(), acc: new THREE.Vector3(),
+  };
+  const listeners = new Set();
+  let emitQueued = false;
+  function emit() { if (emitQueued) return; emitQueued = true; queueMicrotask(() => { emitQueued = false; const st = state(); listeners.forEach((f) => { try { f(st); } catch (e) { console.error(e); } }); }); }
+
+  function setFade(o) {
+    for (const m of fadeMats) {
+      const tr = o < 1 ? true : m.userData.tr0;
+      if (m.transparent !== tr) { m.transparent = tr; m.needsUpdate = true; }
+      m.opacity = (m.userData.op0 ?? 1) * o;
+    }
+  }
   let onRecord = null;
 
   function moveTo(x, z, room, id) {
@@ -200,38 +134,137 @@ export function buildLuxmeter(stage) {
     if (builtFor !== pl) build(pl);
     plane = pl;
     const now = performance.now() / 1000;
+    const changed = (id || null) !== S.id;
     S.id = id || null; S.hold = false; S.memUntil = 0;
+    if (changed) api.onRetarget?.();
     if (!group.visible || S.fadeDir < 0) {
       group.visible = true; S.x = S.fx = S.tx = x; S.z = S.fz = S.tz = z; S.t0 = now; S.dur = 0; S.arriveT = now;
-      S.fadeDir = 1; setTransparent(true);
-      const cam = stage.camera; S.yaw = Math.atan2(cam.position.x - x, cam.position.z - z);
+      S.fadeDir = 1; setFade(0.001);
+      if (!S.yawLock) { const cam = stage.camera; S.yaw = Math.atan2(cam.position.x - x, cam.position.z - z); }
+      if (cable) cable.inited = false;
     } else {
       S.fx = S.x; S.fz = S.z; S.tx = x; S.tz = z; S.t0 = now;
-      S.dur = Math.min(2.4, 0.75 + Math.hypot(x - S.x, z - S.z) * 0.3); S.arriveT = now + S.dur;
+      S.dur = Math.hypot(x - S.x, z - S.z) < 1e-4 ? 0 : Math.min(2.4, 0.75 + Math.hypot(x - S.x, z - S.z) * 0.3); S.arriveT = now + S.dur;
     }
-    S.lastLCD = ''; S.lcdT = 0;
+    S.lcdT = 0; emit();
   }
-  function hide() { if (group.visible && S.fadeDir >= 0) { S.fadeDir = -1; setTransparent(true); S.id = null; } }
-  /** Teclas do aparelho: power (liga/desliga o visor), hold (congela), rec (registra no campo do ponto), range (sem efeito: auto). */
-  function press(name) {
-    const now = performance.now() / 1000; S.press[name] = now; S.lcdT = 0;
-    if (name === 'power') { S.power = !S.power; S.hold = false; if (S.power) S.arriveT = now; }
-    else if (!S.power) return;
-    else if (name === 'hold') { S.hold = !S.hold; S.heldV = S.shown; }
-    else if (name === 'rec') { if (S.id && onRecord) onRecord(S.id, S.shown); }
+  function hide() { if (group.visible && S.fadeDir >= 0) { S.fadeDir = -1; S.id = null; emit(); } }
+
+  // ---------- teclas ----------
+  const src = () => LIGHT_SOURCES[S.src];
+  function flash(l2, ms = 1300, icons = {}, l1) { S.flash = { l2, l1, icons, until: performance.now() / 1000 + ms / 1000 }; }
+  function storeMem(v, id) {
+    if (!isFinite(v)) return false;
+    if (S.mem.length >= MEM_MAX) { flash('  FULL', 1500); return false; }
+    S.mem.push({ no: S.mem.length + 1, v: Math.round(v * 10) / 10, unit: S.unit, src: src().code, factor: src().factor, id: id || S.id, t: Date.now() });
+    flash('no.  ' + String(S.mem.length).padStart(2, '0'), 1300, { mem: true });
+    return true;
   }
-  /** Mostra no visor o valor efetivamente registrado (indicador REC por 2,5 s). */
-  function showRecorded(v) { if (isFinite(v)) { S.memV = v; S.memUntil = performance.now() / 1000 + 2.5; S.lcdT = 0; } }
+  /**
+   * name: 'power'|'source'|'hold'|'mem'|'read'|'zero'|'up'|'down'|'unit'|'rec'  (opts.long: pressão longa da tecla física)
+   * Teclas físicas → hold (curto) / source (longo); mem (curto) / read (longo); unit (LX/FC·CD).
+   */
+  function press(name, opts = {}) {
+    const now = performance.now() / 1000;
+    if (opts.long && name === 'hold') name = 'source';
+    if (opts.long && name === 'mem') name = 'read';
+    const keyName = name === 'source' ? 'hold' : name === 'read' ? 'mem' : name === 'lxfc' ? 'unit' : name;
+    S.press[keyName] = now; S.lcdT = 0; S.msg = '';
+    if (name === 'power') { setPower(!S.on); return state(); }
+    if (!S.on && name !== 'rec') return state();
+    switch (name) {
+      case 'hold': if (S.mode === 'read') break; if (!S.hold) tickReading(now, S.dur > 0); S.hold = !S.hold; S.heldV = S.shownRaw; break;
+      case 'source':
+        S.src = (S.src + 1) % LIGHT_SOURCES.length; S.hold = false;
+        flash(null, 1800, { ls: true, blink: true }); S.msg = `Fonte de luz: ${src().code} ${src().name} (fator ${src().factor.toFixed(3)})`; break;
+      case 'mem':
+        if (S.mode === 'read') { S.mode = 'meas'; break; }
+        { const v = displayed(); if (storeMem(v)) { S.msg = `Leitura gravada na memória NO.${String(S.mem.length).padStart(2, '0')}`; writeField(v); } } break;
+      case 'read':
+        S.mode = S.mode === 'read' ? 'meas' : 'read'; S.hold = false; S.readIdx = Math.max(0, S.mem.length - 1); break;
+      case 'up': case 'down': {
+        if (S.mode !== 'read') { S.mode = 'read'; S.readIdx = Math.max(0, S.mem.length - 1); break; }
+        const n = S.mem.length; if (!n) break;
+        S.readIdx = (S.readIdx + (name === 'up' ? 1 : -1) + n) % n; break;
+      }
+      case 'zero':
+        if (S.capK > 0.02 || S.cap === false) { flash('  CAP ', 1600); S.msg = 'ZERO exige a tampa na fotocélula'; }
+        else { S.zeroed = true; S.msg = 'Ajuste de zero feito (tampa colocada)'; }
+        break;
+      case 'unit': S.unit = S.unit === 'lux' ? 'fc' : 'lux'; break;
+      case 'rec': { const v = displayed(); if (S.id && isFinite(v)) { writeField(v); try { window.__sim?.emit?.('record', { id: S.id, v }); } catch (e) { console.error(e); } if (onRecord) onRecord(S.id, v); } } break;
+      default: break;
+    }
+    S.lcdT = 0; emit(); return state();
+  }
+  /** Valor exibido (lux): congelado (HOLD) ou ao vivo. */
+  function displayed() { return S.on ? (S.hold ? S.heldV : S.shownRaw) : NaN; }
+  /** Grava o valor EXIBIDO no campo do ponto (planilha). */
+  function writeField(v) {
+    const sim = window.__sim; if (!S.id || !isFinite(v) || !sim?.set) return;
+    try { sim.set({ values: { ...sim.state.values, [S.id]: Math.round(v * 10) / 10 } }); } catch (e) { console.error(e); }
+  }
+  function setPower(on) {
+    on = on === undefined ? !S.on : !!on;
+    if (on === S.on) return state();
+    const now = performance.now() / 1000;
+    S.on = on; S.hold = false; S.mode = 'meas'; S.flash = null; S.press.power = now;
+    if (on) { S.testUntil = now + 1.1; S.arriveT = now + 1.1; } else { S.zeroed = false; }
+    S.lcdT = 0; emit(); return state();
+  }
+  function setCap(b) {
+    b = !!b; if (b === S.cap) return state();
+    S.cap = b; S.capFrom = S.capK; S.capT0 = performance.now() / 1000; if (b) S.zeroed = false; S.lcdT = 0; emit(); return state();
+  }
+  function showBack(b) {
+    b = !!b; if (b === S.back) return state();
+    S.back = b; S.backFrom = S.backK; S.backT0 = performance.now() / 1000; emit(); return state();
+  }
+  /** Mostra no visor o valor registrado no campo (e guarda na memória interna). */
+  function showRecorded(v) {
+    if (!isFinite(v)) return;
+    const last = S.mem[S.mem.length - 1];
+    if (!(last && last.id === S.id && Math.abs(last.v - v) < 0.05 && Date.now() - last.t < 1500)) storeMem(v);
+    S.memV = v; S.memUntil = performance.now() / 1000 + 2.5; S.lcdT = 0; emit();
+  }
   function liveLux() { let v = NaN; try { v = window.__sim?.simulatedLux?.(S.x, S.z); } catch { /* */ } return v; }
 
+  // ---------- visor ----------
+  function lcdModel(now) {
+    if (!S.on) return { off: true, l1: '', l2: '' };
+    if (now < S.testUntil) return { test: true, l1: '8.8.8.8', l2: '888888' };
+    const icons = { auto: true, bat: true, ls: true, lux: S.unit === 'lux', fc: S.unit === 'fc', hold: S.hold, zero: S.zeroed };
+    let l1, l2 = `${src().code}${src().factor.toFixed(3)}`, x10 = false;
+    if (S.mode === 'read') {
+      icons.read = true; icons.hold = false;
+      const r = S.mem[S.readIdx];
+      if (r) { const f = fmt4(r.unit === S.unit ? r.v : S.unit === 'fc' ? r.v / FC : r.v * FC); l1 = f.s; x10 = f.x10; l2 = 'no.  ' + String(r.no).padStart(2, '0'); }
+      else { l1 = '----'; l2 = 'no.  00'; }
+    } else {
+      const v = S.hold ? S.heldV : S.shownRaw;
+      const f = fmt4(S.unit === 'fc' ? v / FC : v); l1 = f.s; x10 = f.x10;
+    }
+    icons.x10 = x10;
+    if (S.flash && now < S.flash.until) {
+      Object.assign(icons, S.flash.icons);
+      if (S.flash.l2 != null) l2 = S.flash.l2;
+      if (S.flash.l1 != null) l1 = S.flash.l1;
+      if (S.flash.icons.blink && Math.floor(now * 3) % 2) l2 = '  ' + l2.slice(2);   // código da fonte piscando (seleção L.S.)
+    } else S.flash = null;
+    return { icons, l1, l2 };
+  }
+  const l2Text = (s) => { if (!s) return ''; const c = s.replace(/\./g, ''); return /^L\d/.test(s) ? `${s.slice(0, 2)} ${s.slice(2)}` : /^no/.test(s) ? `NO.${c.slice(2).trim()}` : s.trim(); };
+
+  // ---------- quadro ----------
+  const tmpV = new THREE.Vector3(), tmpQ = new THREE.Quaternion(), endA = new THREE.Vector3(), endB = new THREE.Vector3();
   function update(dt, now) {
     if (!group.visible) return;
     if (S.fadeDir) {
-      S.fade = Math.min(1, Math.max(0, S.fade + S.fadeDir * dt / 0.35)); setOpacity(S.fade);
-      if (S.fadeDir > 0 && S.fade >= 1) { S.fadeDir = 0; setTransparent(false); setOpacity(1); }
+      S.fade = clamp01(S.fade + S.fadeDir * dt / 0.35); setFade(Math.max(0.001, S.fade));
+      if (S.fadeDir > 0 && S.fade >= 1) { S.fadeDir = 0; setFade(1); }
       if (S.fadeDir < 0 && S.fade <= 0) { S.fadeDir = 0; group.visible = false; return; }
     }
-    // deslocamento suave, pés sempre no piso (balanço leve do tripé durante o transporte)
+    // deslocamento suave (pés sempre no piso) + balanço leve do tripé
     let moving = false;
     if (S.dur > 0) {
       const u = Math.min(1, (now - S.t0) / S.dur), e = easeInOut(u);
@@ -241,45 +274,122 @@ export function buildLuxmeter(stage) {
     rig.position.set(S.x, 0, S.z);
     const sway = moving ? Math.sin(Math.PI * Math.min(1, (now - S.t0) / Math.max(0.01, S.dur))) : 0;
     rig.rotation.x = sway * Math.sin(now * 8) * 0.004; rig.rotation.z = sway * Math.cos(now * 6.5) * 0.004;
-    // painel voltado para a câmera
-    const cam = stage.camera; const want = Math.atan2(cam.position.x - S.x, cam.position.z - S.z);
-    let d = want - S.yaw; d = Math.atan2(Math.sin(d), Math.cos(d)); S.yaw += d * Math.min(1, dt * 3.5); rig.rotation.y = S.yaw;
-    // teclas: afundam 1,5 mm ao pressionar
-    for (const b of buttons) { const tp = now - (S.press[b.userData.btn] ?? -9); b.position.z = b.userData.z0 - (tp < 0.18 ? 0.0015 : 0); }
-    // leitura (~3 Hz). Ao chegar ao ponto a leitura sobe e assenta em ~1,5 s (estabilização, NHO-11 item 6.4).
+    if (!S.yawLock) {
+      const cam = stage.camera; const want = Math.atan2(cam.position.x - S.x, cam.position.z - S.z);
+      let d = want - S.yaw; d = Math.atan2(Math.sin(d), Math.cos(d)); S.yaw += d * Math.min(1, dt * 3.5);
+    }
+    rig.rotation.y = S.yaw;
+    // aceleração do referencial (para o cabo balançar quando o tripé anda)
+    tmpV.set(S.x, 0, S.z); if (dt > 0) { const v = tmpV.clone().sub(S.lastPos).divideScalar(dt); S.acc.copy(v).sub(S.vel).divideScalar(dt).clampLength(0, 6); S.vel.copy(v); } S.lastPos.copy(tmpV);
+    // teclas: afundam 1,2 mm ao pressionar
+    for (const k of keys) { const tp = now - (S.press[k.name] ?? -9); k.mesh.position.z = k.mesh.userData.z0 - (tp < 0.16 ? 0.0012 : 0); }
+    // corpo: girar para mostrar o verso (levanta do berço, gira 180°, assenta)
+    const bk = clamp01((now - S.backT0) / 1.4); S.backK = S.backFrom + ((S.back ? 1 : 0) - S.backFrom) * easeInOut(bk);
+    if (bodyRef && S.backK !== S.backPoseK) {
+      S.backPoseK = S.backK; const k = S.backK, lift = Math.sin(Math.PI * k) * 0.05;
+      bodyRef.position.set(0, BODY.h / 2 + 0.0002 + lift, Math.sin(Math.PI * k) * 0.025);
+      bodyRef.rotation.y = Math.PI * easeInOut(sstep(0.15, 0.85, k));
+    }
+    // tampa: assentada (capK=0) ↔ pendurada pelo cordão (capK=1)
+    const ck = clamp01((now - S.capT0) / 1.1); S.capK = S.capFrom + ((S.cap ? 0 : 1) - S.capFrom) * easeInOut(ck);
+    const swing = S.capK > 0.98 ? Math.sin(now * 3.1) * 0.06 * Math.exp(-Math.max(0, now - S.capT0 - 1.1) * 0.6) : 0;
+    if (capObj && (S.capK !== S.capPoseK || swing)) {
+      S.capPoseK = S.capK; const k = S.capK;
+      const lift = sstep(0, 0.3, k) * 0.028;
+      const m = sstep(0.25, 1, k);
+      capObj.group.position.copy(capSeat.p).lerp(capHang.p, m); capObj.group.position.y += lift * (1 - m) + Math.sin(Math.PI * m) * 0.02;
+      capObj.group.quaternion.slerpQuaternions(capSeat.q, capHang.q, m);
+      if (swing) { tmpQ.setFromAxisAngle(new THREE.Vector3(0, 0, 1), swing); capObj.group.quaternion.premultiply(tmpQ); }
+      updateCord();
+    }
+    // cabo espiralado (simulação contínua enquanto houver movimento)
+    if (cable && cell && bodyRef) {
+      rig.updateMatrixWorld(true);
+      endA.copy(cell.cableStart).add(cell.group.position);
+      endB.copy(bodyRef.userData.cableEnd || (bodyRef.userData.cableEnd = new THREE.Vector3(0.0115, BODY.h / 2 + 0.019, 0)));
+      bodyRef.localToWorld(endB); rig.worldToLocal(endB);
+      tmpV.copy(S.acc).applyAxisAngle(new THREE.Vector3(0, 1, 0), -S.yaw);
+      cable.step(endA, endB, dt, tmpV);
+    }
+    // leitura (~4 Hz)
     S.lcdT -= dt;
-    if (S.lcdT <= 0) {
-      S.lcdT = moving ? 0.2 : 0.33;
-      // parado sobre o ponto: valor final = __sim.readLuxmeter(id) (determinístico; é o que REC grava)
-      let T = liveLux(), mem = false;
-      if (!moving && S.id) { try { const f = window.__sim?.readLuxmeter?.(S.id); if (isFinite(f)) T = f; } catch { /* */ } }
-      let v = T;
-      const u = now - S.arriveT;
-      if (!moving && isFinite(T)) {
-        if (u < 1.6) v = T * (1 - Math.exp(-Math.max(0, u) / 0.32)) + T * 0.035 * Math.exp(-Math.max(0, u) / 0.4) * Math.sin(u * 8);
-        else v = T;                                          // estável: exatamente o valor que será registrado
-      }
-      S.stable = !moving && u >= 1.6;
-      if (S.hold) v = S.heldV;
-      if (now < S.memUntil) { v = S.memV; mem = true; }
-      S.shown = isFinite(v) ? Math.round(v * 10) / 10 : NaN;
-      const str = S.power ? fmtLCD(S.shown) : '';
-      const key = str + (S.hold ? 'H' : '') + (mem ? 'M' : '') + (S.power ? '' : 'off');
-      if (key !== S.lastLCD) { S.lastLCD = key; drawLCD(lcdCanvas, str, { hold: S.hold, mem, off: !S.power }); lcdTex.needsUpdate = true; }
+    if (S.lcdT <= 0) { S.lcdT = moving ? 0.2 : 0.25; tickReading(now, moving); }
+  }
+  function updateCord() {
+    if (!cord || !cell || !capObj) return;
+    const a = cell.lugPos.clone().add(cell.group.position);
+    const b = capObj.tabLocal.clone().applyQuaternion(capObj.group.quaternion).add(capObj.group.position);
+    const span = a.distanceTo(b), slack = Math.max(0.004, 0.05 - span);
+    const c = a.clone().lerp(b, 0.5); c.y -= slack * 0.9; c.x -= slack * 0.3;
+    const curve = new THREE.QuadraticBezierCurve3(a, c, b);
+    cord.geometry.dispose(); cord.geometry = new THREE.TubeGeometry(curve, 20, 0.0007, 5, false);
+  }
+  let lastT = performance.now() / 1000;
+  function tickReading(now, moving) {
+    const dt = Math.min(0.5, now - lastT); lastT = now;
+    let T = NaN;
+    if (!moving && S.id) { try { const f = window.__sim?.readLuxmeter?.(S.id); if (isFinite(f)) T = f; } catch { /* */ } }
+    if (!isFinite(T)) T = liveLux();
+    const target = T * src().factor;
+    // luz que atravessa a cúpula: a tampa bloqueia (resposta da fotocélula ~0,3 s)
+    const open = S.capK > 0.12 ? 1 : 0;
+    S.lf += (open - S.lf) * (1 - Math.exp(-dt / 0.3)); if (Math.abs(open - S.lf) < 2e-3) S.lf = open;
+    let v = target * S.lf;
+    const u = now - S.arriveT;
+    if (!moving && isFinite(target) && u < 1.6) v = v * (1 - Math.exp(-Math.max(0, u) / 0.32)) + target * 0.035 * Math.exp(-Math.max(0, u) / 0.4) * Math.sin(u * 8);
+    if (S.lf < 0.02) v = S.zeroed ? 0 : 0.5 + 0.3 * Math.abs(Math.sin(now * 1.3)) + 0.1 * Math.sin(now * 7.1);   // corrente de escuro (sem ZERO)
+    S.stable = !moving && u >= 1.6 && (S.lf === 1 || S.lf === 0);
+    S.shownRaw = isFinite(v) ? Math.round(Math.max(0, v) * 10) / 10 : NaN;
+    let shown = S.hold ? S.heldV : S.shownRaw;
+    if (now < S.memUntil) shown = S.memV;
+    S.shown = shown;
+    const m = lcdModel(now);
+    const key = JSON.stringify(m);
+    if (key !== S.lastKey) {
+      S.lastKey = key; drawLuxLCD(lcdCanvas, m); lcdTex.needsUpdate = true;
+      const unit = S.unit === 'fc' ? 'Fc' : 'Lux';
+      S.dispL1 = m.off ? '' : m.test ? '8.8.8.8' : `${m.l1} ${unit}`; S.dispL2 = m.off ? '' : m.test ? '888888' : l2Text(m.l2);
+      emit();
     }
   }
+
+  function state() {
+    const s = src();
+    return {
+      on: S.on, hold: S.hold, source: { code: s.code, name: s.name, factor: s.factor, index: S.src }, zeroed: S.zeroed, cap: S.cap,
+      reading: S.on ? (S.hold ? S.heldV : S.shownRaw) : NaN, unit: S.unit, mode: S.mode, readIndex: S.readIdx, display: [S.dispL1, S.dispL2],
+      mem: S.mem.map((r) => ({ ...r })), id: S.id, stable: S.stable, back: S.back, msg: S.msg,
+      roomSource: LIGHT_SOURCES[actualSource()].code, visible: group.visible && S.fadeDir >= 0,
+    };
+  }
   const _v = new THREE.Vector3();
-  return {
-    group, moveTo, hide, update, press, showRecorded,
+  const api = {
+    group, moveTo, hide, update, press, showRecorded, setPower, setCap, showBack, state,
+    onChange(fn) { listeners.add(fn); return () => listeners.delete(fn); },
+    sources: LIGHT_SOURCES.map((x) => ({ ...x })),
+    setSource(x) {
+      const i = typeof x === 'number' ? x : LIGHT_SOURCES.findIndex((s) => s.code.toLowerCase() === String(x).toLowerCase() || s.name.toLowerCase() === String(x).toLowerCase());
+      if (i >= 0 && i < LIGHT_SOURCES.length) { S.src = i; S.lcdT = 0; emit(); } return state();
+    },
+    clearMem() { S.mem.length = 0; S.readIdx = 0; S.lcdT = 0; emit(); return state(); },
+    get focused() { return window.__lux?.focused || null; },
     set onRecord(fn) { onRecord = fn; },
     get active() { return group.visible && S.fadeDir >= 0; },
     get target() { return { x: S.tx, z: S.tz }; },
     get pos() { return { x: S.x, z: S.z }; },
     get id() { return S.id; },
     get hitTargets() { return hits; },
-    /** estado do visor: {value, stable, hold, power, mem, moving} */
-    get display() { return { value: S.shown, stable: S.stable, hold: S.hold, power: S.power, mem: performance.now() / 1000 < S.memUntil, moving: S.dur > 0 }; },
+    /** estado do visor (rótulo flutuante da MARCAÇÃO): {value, stable, hold, power, mem, moving, cap} */
+    get display() { return { value: S.shown, stable: S.stable, hold: S.hold, power: S.on, mem: performance.now() / 1000 < S.memUntil, moving: S.dur > 0, cap: S.cap, mode: S.mode }; },
     bodyWorld(out = _v) { if (!bodyRef) return null; return bodyRef.getWorldPosition(out); },
     get reading() { return S.shown; }, get plane() { return plane; },
+    // internos para o __lux (mark_lux_api.js)
+    _internal: {
+      S, rig, get parts() { return parts; }, get body() { return bodyRef; }, get mount() { return mountRef; }, get cell() { return cell; }, get cap() { return capObj; },
+      lcdCanvas,
+      busy: () => S.dur > 0 || S.fadeDir !== 0 || Math.abs(S.capK - (S.cap ? 0 : 1)) > 1e-3 || Math.abs(S.backK - (S.back ? 1 : 0)) > 1e-3,
+    },
   };
+  installLuxAPI(stage, api);
+  return api;
 }
